@@ -1,0 +1,92 @@
+{
+  "version": "1.0.1",
+  "language": "en",
+  "email": "",
+  "password": "",
+  "useEnvForCredentials": false,
+  "envGuide": "When useEnvForCredentials enabled, it will use the process.env key provided for email and password, which helps hide your credentials, you can find env in render's environment tab, you can also find it in replit secrets.",
+  "DeveloperMode": true,
+  "autoCreateDB": true,
+  "allowInbox": false,
+  "autoClean": true,
+  "adminOnly": false,
+  "encryptSt": false,
+  "removeSt": false,
+  "UPDATE": {
+    "Package": false,
+    "EXCLUDED": [
+      "chalk",
+      "mqtt",
+      "https-proxy-agent"
+    ],
+    "Info": "This section manages the bot's automatic package updates. To disable this function, set 'Package' to false. If you only want to exclude specific packages, set them to true and add them in the 'EXCLUDED' list."
+  },
+  "commandDisabled": [],
+  "eventDisabled": [],
+  "BOTNAME": "Fmate💘",
+  "PREFIX": "?",
+  "ADMINBOT": [
+    "61555393416824"
+  ],
+  "DESIGN": {
+    "Title": "BOT CONSOLE",
+    "Theme": "Blue",
+    "Admin": "Hassan",
+    "Setup": {
+      "Info": "",
+      "Theme": ""
+    }
+  },
+  "APPSTATEPATH": "appstate.json",
+  "DEL_FUNCTION": false,
+  "ADD_FUNCTION": true,
+  "FCAOption": {
+    "forceLogin": false,
+    "listenEvents": true,
+    "autoMarkDelivery": true,
+    "autoMarkRead": true,
+    "logLevel": "silent",
+    "selfListen": false,
+    "online": true,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "autoReconnect": true,
+    "autoRestore": true,
+    "syncUp": true,
+    "delay": 500
+  },
+  "daily": {
+    "cooldownTime": 43200000,
+    "rewardCoin": 500
+  },
+  "work": {
+    "cooldownTime": 1200000
+  },
+  "help": {
+    "autoUnsend": true,
+    "delayUnsend": 60
+  },
+  "adminUpdate": {
+    "autoUnsend": true,
+    "sendNoti": true,
+    "timeToUnsend": 10
+  },
+  "adminNoti": {
+    "autoUnsend": true,
+    "sendNoti": true,
+    "timeToUnsend": 10
+  },
+  "humanLikeDelay": {
+    "min": 2000,
+    "max": 8000
+  },
+  "randomActivity": {
+    "status": true,
+    "intervalMin": 60,
+    "intervalMax": 180
+  },
+  "autoRestart": {
+    "enabled": true,
+    "schedule": "0 */6 * * *",
+    "notifyAdmins": true
+  }
+}

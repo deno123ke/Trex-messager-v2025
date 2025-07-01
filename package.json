@@ -1,15 +1,24 @@
 {
-  "name": "nodejs",
+  "name": "Trex v20.25",
   "version": "1.0.0",
-  "description": "",
+  "description": "Trex v20.25 is a smart, modular, and dynamic bot created by Hassan with passion and creativity. Designed to be highly customizable, Trex supports a wide range of commands and features that make conversations more engaging, interactive, and fun. Whether you're adding games, utilities, AI-powered responses, image generation, or automation tools, Trex is built to evolve with your ideas. Crafted with care, every feature in Trex reflects a commitment to quality and user experience—it's more than just a bot, it's a digital companion built with love.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Hassan",
+  "license": "MIT",
   "dependencies": {
-    "@types/node": "^22.13.11"
+    "@google/generative-ai": "^0.7.0",
+    "axios": "^0.21.1",
+    "chalk": "^4.1.2",
+    "express": "^4.18.2",
+    "fs-extra": "^11.3.0",
+    "get-latest-version": "^2.0.0",
+    "hassan-fca": "github:TRexHassan565/HassAn-fca-mate",
+    "moment-timezone": "^0.5.48",
+    "node-cron": "^3.0.3",
+    "semver": "^7.5.4",
+    "sharp": "^0.33.4"
   }
 }
