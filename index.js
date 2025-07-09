@@ -66,6 +66,11 @@ const defaultConfigContent = {
     "enabled": true,
     "schedule": "0 */6 * * *", // Every 6 hours
     "notifyAdmins": true
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 300000, // 5 minutes
+    "timeout": 60000 // 1 minute
   }
 };
 
@@ -323,6 +328,29 @@ const utils = {
       });
     });
     process.exit();
+  },
+  // FIXED HEARTBEAT FUNCTION - CORRECTED SYNTAX ERROR
+  checkHeartbeat: async (api) => {
+    if (!global.config.heartbeat?.enabled) return true;
+    
+    try {
+      // Simple check to see if API is responsive
+      const startTime = Date.now();
+      await Promise.race([
+        api.getThreadList(1, null, ['INBOX']),
+        new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Heartbeat timeout'));
+          }, global.config.heartbeat.timeout || 60000);
+        })
+      ]);
+      const responseTime = Date.now() - startTime;
+      logger.log(`Heartbeat check passed. Response time: ${responseTime}ms`, "HEARTBEAT");
+      return true;
+    } catch (e) {
+      logger.err(`Heartbeat check failed: ${e.message}`, "HEARTBEAT_ERROR");
+      return false;
+    }
   }
 };
 
@@ -937,6 +965,38 @@ const customScript = ({ api }) => {
             scheduled: true,
             timezone: "Asia/Dhaka"
         });
+    }
+
+    // Heartbeat monitoring
+    if (global.config.heartbeat?.enabled) {
+        const interval = global.config.heartbeat.interval || 300000; // Default 5 minutes
+        const maxFailedAttempts = 3;
+        let failedAttempts = 0;
+
+        setInterval(async () => {
+            try {
+                const isHealthy = await utils.checkHeartbeat(api);
+                if (!isHealthy) {
+                    failedAttempts++;
+                    logger.warn(`Heartbeat check failed (attempt ${failedAttempts}/${maxFailedAttempts})`, "HEARTBEAT_WARN");
+                    
+                    if (failedAttempts >= maxFailedAttempts) {
+                        logger.err("Max failed heartbeat attempts reached. Restarting bot...", "HEARTBEAT_ERROR");
+                        await utils.restartBot(api, "Heartbeat failure");
+                    }
+                } else {
+                    failedAttempts = 0; // Reset on success
+                }
+            } catch (e) {
+                logger.err(`Error in heartbeat check: ${e.message}`, "HEARTBEAT_ERROR");
+                failedAttempts++;
+                
+                if (failedAttempts >= maxFailedAttempts) {
+                    logger.err("Max failed heartbeat attempts reached. Restarting bot...", "HEARTBEAT_ERROR");
+                    await utils.restartBot(api, "Heartbeat failure");
+                }
+            }
+        }, interval);
     }
 };
 

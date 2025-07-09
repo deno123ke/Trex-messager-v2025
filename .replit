@@ -16,3 +16,7 @@ ignorePorts = false
 [[ports]]
 localPort = 3000
 externalPort = 80
+
+[[ports]]
+localPort = 10000
+externalPort = 3000
