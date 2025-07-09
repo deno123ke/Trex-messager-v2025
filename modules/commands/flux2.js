@@ -17,7 +17,7 @@ module.exports = {
 
   onStart: async function ({ api, event, args }) {
     let fullInput = args.join(" ");
-    const API_KEY = "13020f6ef494e4448a47202c476dc505a80479931d2d9bd8e15e22b7c2df50df"; // Replace with your actual API key
+    const API_KEY = "ba22a1c6d520bfedf77c0630221544d295353c33a5d22f5dc77846cf4b412de1"; // Replace with your actual API key
     const API_URL = "https://api.wavespeed.ai/api/v2/wavespeed-ai/flux-dev-ultra-fast";
     const POLL_URL = "https://api.wavespeed.ai/api/v2/predictions";
 
