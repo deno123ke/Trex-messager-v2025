@@ -1,6 +1,6 @@
-const fetch = require("node-fetch");
-const FormData = require("form-data");
+const axios = require("axios");
 const fs = require("fs");
+const path = require("path");
 
 module.exports = {
   config: {
@@ -9,50 +9,39 @@ module.exports = {
     author: "Hassan",
     countDown: 5,
     role: 0,
-    shortDescription: "Generate AI image ",
-    longDescription: "Generate a photorealistic image using the Clip... Text-to-Image API.",
+    shortDescription: "Generate AI image",
+    longDescription: "Generate a photorealistic image using your own Crip API.",
     category: "image",
-    guide: "{pn} [your prompt]\nExample: {pn} vaporwave fashion dog in miami"
+    guide: "{pn} [your prompt]\nExample: {pn} astronaut dog on mars"
   },
 
   onStart: async function ({ event, message, args }) {
     const prompt = args.join(" ");
     if (!prompt) {
-      return message.reply("❌ Please enter a prompt.\nExample: crip vaporwave fashion dog in miami");
+      return message.reply("❌ Please enter a prompt.\nExample: crip astronaut dog on mars");
     }
 
-    const form = new FormData();
-    form.append("prompt", prompt);
-
-    const apiKey = "3b805b36da5054768ba24d0fbd42ca96f375845d0cea06a27d901055cce2e6d33a1b2e7154ae64e28bb4c48aca47aab7";
+    const apiUrl = "https://hassan-crip.onrender.com/api/crip"; 
 
     try {
-      const res = await fetch("https://clipdrop-api.co/text-to-image/v1", {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          ...form.getHeaders()
-        },
-        body: form
+      const response = await axios({
+        method: 'POST',
+        url: apiUrl,
+        responseType: 'arraybuffer',
+        data: { prompt },
+        headers: { 'Content-Type': 'application/json' }
       });
 
-      if (!res.ok) {
-        const text = await res.text();
-        return message.reply(`❌ Error from API: ${text}`);
-      }
-
-      const buffer = Buffer.from(await res.arrayBuffer());
-      const imgPath = __dirname + "/crip_image.png";
-      fs.writeFileSync(imgPath, buffer);
+      const imgPath = path.join(__dirname, "crip_output.png");
+      fs.writeFileSync(imgPath, response.data);
 
       return message.reply({
-        body: `✨ Here's your generated image: "${prompt}"`,
+        body: `✅ Here's your generated image for:\n"${prompt}"`,
         attachment: fs.createReadStream(imgPath)
-      }, () => fs.unlinkSync(imgPath));
-
+      }, () => fs.unlinkSync(imgPath)); // Clean up file after sending
     } catch (err) {
-      console.error(err);
-      return message.reply("❌ Failed to generate image. Try again later.");
+      console.error("❌ Crip API Error:", err.message);
+      return message.reply("❌ Error generating image. Please try again later.");
     }
   }
 };
