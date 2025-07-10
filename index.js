@@ -2,6 +2,7 @@ const fs = require("fs-extra");
 const path = require('path');
 const { exec, spawn } = require("child_process");
 
+// Default configuration
 const defaultConfigContent = {
   "version": "1.0.1",
   "language": "en",
@@ -74,12 +75,11 @@ const defaultConfigContent = {
   }
 };
 
-// Fixed chalk implementation with synchronous require and fallback
+// Initialize chalk with fallback
 let chalk;
 try {
   chalk = require('chalk');
 } catch (e) {
-  // Fallback to simple ANSI colors if chalk can't be loaded
   chalk = {
     red: (text) => `\x1b[31m${text}\x1b[0m`,
     green: (text) => `\x1b[32m${text}\x1b[0m`,
@@ -97,6 +97,7 @@ try {
   console.warn("Using fallback chalk implementation. For full features, run: npm install chalk@4.1.2");
 }
 
+// Required modules
 const check = require("get-latest-version");
 const semver = require("semver");
 const { readdirSync, readFileSync, writeFileSync } = require("fs-extra");
@@ -157,7 +158,6 @@ function loadPersistentData() {
   try {
     if (fs.existsSync(PERSISTENT_FILE)) {
       const data = JSON.parse(fs.readFileSync(PERSISTENT_FILE, 'utf8'));
-      // Validate loaded data structure
       if (!data.installedCommands || !Array.isArray(data.installedCommands)) {
         data.installedCommands = [];
       }
@@ -180,7 +180,6 @@ function loadPersistentData() {
 
 function savePersistentData(data) {
   try {
-    // Ensure we're only saving valid data
     const saveData = {
       installedCommands: Array.isArray(data.installedCommands) ? data.installedCommands : [],
       adminMode: {
@@ -199,7 +198,7 @@ function savePersistentData(data) {
 // Load persistent data at startup
 const persistentData = loadPersistentData();
 
-// ======== ADD CREATOR PROTECTION HERE ========
+// ======== CREATOR PROTECTION ========
 const CREATOR_NAME = "Hassan";
 let creatorName = CREATOR_NAME;
 
@@ -211,7 +210,7 @@ function protectCreatorName() {
   }
 }
 
-// Display creator name at startup (now using the properly initialized chalk)
+// Display creator name at startup
 console.log(chalk.blueBright(`\n========================================`));
 console.log(chalk.blueBright(`=                                      =`));
 console.log(chalk.blueBright(`=        BOT CREATOR: ${CREATOR_NAME}${' '.repeat(15 - CREATOR_NAME.length)}=`));
@@ -219,13 +218,9 @@ console.log(chalk.blueBright(`=                                      =`));
 console.log(chalk.blueBright(`========================================\n`));
 
 // Periodic creator name checks
-setInterval(protectCreatorName, 60000); // Check every minute
-// ======== END OF CREATOR PROTECTION ========
+setInterval(protectCreatorName, 60000);
 
-// Define defaultEmojiTranslate early so it's accessible globally and for config.json init
-const defaultEmojiTranslate = "🌐";
-
-// Global adminMode object - initialized from persistent data
+// Global adminMode object
 global.adminMode = persistentData.adminMode || {
     enabled: false,
     adminUserIDs: []
@@ -329,12 +324,10 @@ const utils = {
     });
     process.exit();
   },
-  // FIXED HEARTBEAT FUNCTION - CORRECTED SYNTAX ERROR
   checkHeartbeat: async (api) => {
     if (!global.config.heartbeat?.enabled) return true;
     
     try {
-      // Simple check to see if API is responsive
       const startTime = Date.now();
       await Promise.race([
         api.getThreadList(1, null, ['INBOX']),
@@ -350,6 +343,97 @@ const utils = {
     } catch (e) {
       logger.err(`Heartbeat check failed: ${e.message}`, "HEARTBEAT_ERROR");
       return false;
+    }
+  },
+  updateSystem: async function(api, event) {
+    try {
+      await api.sendMessage("🔄 Starting system update...", event.threadID);
+      
+      // Backup current configuration
+      const configBackup = JSON.parse(fs.readFileSync(path.join(global.client.mainPath, 'config.json'), 'utf8'));
+      fs.writeFileSync(path.join(global.client.mainPath, 'config_backup.json'), JSON.stringify(configBackup, null, 2));
+      
+      // Get latest version from repository
+      const repoUrl = "https://raw.githubusercontent.com/yourusername/yourrepo/main/config.json";
+      const response = await axios.get(repoUrl);
+      const latestConfig = response.data;
+      
+      // Preserve important settings
+      const preservedSettings = {
+        email: configBackup.email,
+        password: configBackup.password,
+        useEnvForCredentials: configBackup.useEnvForCredentials,
+        ADMINBOT: configBackup.ADMINBOT,
+        PREFIX: configBackup.PREFIX,
+        BOTNAME: configBackup.BOTNAME,
+        APPSTATEPATH: configBackup.APPSTATEPATH
+      };
+      
+      // Merge configurations
+      const mergedConfig = {
+        ...latestConfig,
+        ...preservedSettings,
+        version: latestConfig.version
+      };
+      
+      // Write new config
+      fs.writeFileSync(path.join(global.client.mainPath, 'config.json'), JSON.stringify(mergedConfig, null, 2));
+      
+      // Update package.json if needed
+      const packageJsonPath = path.join(global.client.mainPath, 'package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+      if (latestConfig.dependencies) {
+        packageJson.dependencies = {
+          ...packageJson.dependencies,
+          ...latestConfig.dependencies
+        };
+        fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+      }
+      
+      // Install/update dependencies
+      await new Promise((resolve, reject) => {
+        exec('npm install', (error, stdout, stderr) => {
+          if (error) {
+            logger.err(`Error updating dependencies: ${error.message}`, "UPDATE_ERROR");
+            reject(error);
+          } else {
+            logger.log("Dependencies updated successfully", "UPDATE");
+            resolve();
+          }
+        });
+      });
+      
+      // Notify success and restart
+      await api.sendMessage(
+        `✅ System updated successfully to version ${mergedConfig.version}!\n` +
+        `The bot will now restart to apply changes.`,
+        event.threadID
+      );
+      
+      // Restart the bot
+      await utils.restartBot(api, "System update completed");
+      
+    } catch (error) {
+      logger.err(`System update failed: ${error.message}`, "UPDATE_ERROR");
+      await api.sendMessage(
+        `❌ System update failed:\n${error.message}\n` +
+        `Attempting to restore from backup...`,
+        event.threadID
+      );
+      
+      // Restore from backup if update failed
+      try {
+        const backupConfig = JSON.parse(fs.readFileSync(path.join(global.client.mainPath, 'config_backup.json'), 'utf8'));
+        fs.writeFileSync(path.join(global.client.mainPath, 'config.json'), JSON.stringify(backupConfig, null, 2));
+        await api.sendMessage("✅ Configuration restored from backup.", event.threadID);
+      } catch (restoreError) {
+        logger.err(`Failed to restore from backup: ${restoreError.message}`, "UPDATE_ERROR");
+        await api.sendMessage(
+          `⚠️ Failed to restore from backup. Manual intervention required.\n` +
+          `Error: ${restoreError.message}`,
+          event.threadID
+        );
+      }
     }
   }
 };
@@ -428,13 +512,11 @@ const listen = ({ api }) => {
                 return;
             }
 
-            // Add null/undefined check for event
             if (!event) {
                 logger.err("Received undefined/null event object", "EVENT_ERROR");
                 return;
             }
 
-            // Log event type if it exists
             if (event.type) {
                 logger.log(`Received event type: ${event.type}`, "EVENT_RECEIVED");
             } else if (event.logMessageType) {
@@ -467,7 +549,6 @@ const listen = ({ api }) => {
                 return;
             }
 
-            // Check if event has type property before accessing it
             if (event.type === "message_reaction") {
                 if (!event.messageID) {
                     logger.err("Message reaction event missing messageID", "EVENT_ERROR");
@@ -512,7 +593,6 @@ const listen = ({ api }) => {
                 return;
             }
 
-            // 🟢 Ensure global.api and global.api.handleReply are initialized properly
             global.api = api;
             global.api.handleReply = global.api.handleReply || new Map();
 
@@ -522,8 +602,7 @@ const listen = ({ api }) => {
                 let threadPrefix = await global.data.threads.get(event.threadID, "data.prefix") || systemPrefix;
                 let commandFoundAndExecuted = false;
 
-                // ======= HANDLE PREFIX COMMANDS =======
-                // Check for prefix command in various formats
+                // Handle prefix commands
                 const prefixCommandRegex = /^(?:prefix|\?prefix|Prefix)\s*$/i;
                 if (prefixCommandRegex.test(event.body.trim())) {
                     await utils.humanDelay();
@@ -534,7 +613,7 @@ const listen = ({ api }) => {
                     );
                 }
 
-                // Handle prefix change command in various formats
+                // Handle prefix change
                 const prefixChangeRegex = /^(?:prefix|\?prefix|Prefix)\s+(\S+)/i;
                 const prefixChangeMatch = event.body.match(prefixChangeRegex);
                 if (prefixChangeMatch) {
@@ -560,7 +639,7 @@ const listen = ({ api }) => {
                     return;
                 }
 
-                // ======= HANDLE REPLY =======
+                // Handle reply
                 if (event.type === "message_reply") {
                     const repliedToMessageID = event.messageReply.messageID;
                     const threadID = event.threadID;
@@ -610,7 +689,7 @@ const listen = ({ api }) => {
 
                 if (commandFoundAndExecuted) return;
 
-                // ======= HANDLE onStart COMMANDS =======
+                // Handle onStart commands
                 if (lowerCaseBody.startsWith(threadPrefix)) {
                     const args = event.body.slice(threadPrefix.length).trim().split(/\s+/);
                     const commandName = args.shift().toLowerCase();
@@ -1614,12 +1693,10 @@ onBot();
 // --- Process Event Handlers for Stability ---
 process.on('uncaughtException', (err) => {
     logger.err(`Uncaught Exception: ${err.stack || err.message}`, "CRITICAL");
-    // Don't exit immediately - try to log the error and continue
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     logger.err(`Unhandled Rejection at: ${promise}, reason: ${reason}`, "CRITICAL");
-    // Don't exit immediately - try to log the error and continue
 });
 
 process.on('SIGTERM', () => {
