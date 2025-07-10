@@ -354,7 +354,7 @@ const utils = {
       fs.writeFileSync(path.join(global.client.mainPath, 'config_backup.json'), JSON.stringify(configBackup, null, 2));
       
       // Get latest version from repository
-      const repoUrl = "https://raw.githubusercontent.com/yourusername/yourrepo/main/config.json";
+      const repoUrl = "https://raw.githubusercontent.com/Horror-king/S-pTrex-v2025/refs/heads/main/config.json";
       const response = await axios.get(repoUrl);
       const latestConfig = response.data;
       
