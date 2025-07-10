@@ -15,10 +15,15 @@
     "express": "^4.18.2",
     "fs-extra": "^11.3.0",
     "get-latest-version": "^2.0.0",
+    "groq-sdk": "^0.5.0",
     "hassan-fca": "github:TRexHassan565/HassAn-fca-mate",
     "moment-timezone": "^0.5.48",
     "node-cron": "^3.0.3",
     "semver": "^7.5.4",
-    "sharp": "^0.33.4"
+    "sharp": "^0.33.4",
+    "tmp": "^0.2.1",
+    "node-fetch": "^2.6.7",
+    "form-data": "^4.0.0",
+    "canvas": "^2.11.2"
   }
 }
