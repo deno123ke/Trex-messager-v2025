@@ -351,6 +351,99 @@ const utils = {
       logger.err(`Heartbeat check failed: ${e.message}`, "HEARTBEAT_ERROR");
       return false;
     }
+  },
+  // NEW UPDATE FUNCTIONALITY
+  updateSystem: async function(api, event) {
+    try {
+      // Notify that update is starting
+      await api.sendMessage("🔄 Starting system update...", event.threadID);
+      
+      // Step 1: Backup current configuration
+      const configBackup = JSON.parse(fs.readFileSync(path.join(global.client.mainPath, 'config.json'), 'utf8');
+      fs.writeFileSync(path.join(global.client.mainPath, 'config_backup.json'), JSON.stringify(configBackup, null, 2));
+      
+      // Step 2: Get latest version from repository
+      const repoUrl = "https://raw.githubusercontent.com/yourusername/yourrepo/main/config.json";
+      const response = await axios.get(repoUrl);
+      const latestConfig = response.data;
+      
+      // Step 3: Preserve important settings
+      const preservedSettings = {
+        email: configBackup.email,
+        password: configBackup.password,
+        useEnvForCredentials: configBackup.useEnvForCredentials,
+        ADMINBOT: configBackup.ADMINBOT,
+        PREFIX: configBackup.PREFIX,
+        BOTNAME: configBackup.BOTNAME,
+        APPSTATEPATH: configBackup.APPSTATEPATH
+      };
+      
+      // Step 4: Merge configurations
+      const mergedConfig = {
+        ...latestConfig,
+        ...preservedSettings,
+        version: latestConfig.version // Always use latest version number
+      };
+      
+      // Step 5: Write new config
+      fs.writeFileSync(path.join(global.client.mainPath, 'config.json'), JSON.stringify(mergedConfig, null, 2));
+      
+      // Step 6: Update package.json if needed
+      const packageJsonPath = path.join(global.client.mainPath, 'package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+      if (latestConfig.dependencies) {
+        packageJson.dependencies = {
+          ...packageJson.dependencies,
+          ...latestConfig.dependencies
+        };
+        fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+      }
+      
+      // Step 7: Install/update dependencies
+      await new Promise((resolve, reject) => {
+        exec('npm install', (error, stdout, stderr) => {
+          if (error) {
+            logger.err(`Error updating dependencies: ${error.message}`, "UPDATE_ERROR");
+            reject(error);
+          } else {
+            logger.log("Dependencies updated successfully", "UPDATE");
+            resolve();
+          }
+        });
+      });
+      
+      // Step 8: Notify success and restart
+      await api.sendMessage(
+        `✅ System updated successfully to version ${mergedConfig.version}!\n` +
+        `The bot will now restart to apply changes.`,
+        event.threadID
+      );
+      
+      // Restart the bot
+      await utils.restartBot(api, "System update completed");
+      
+    } catch (error) {
+      logger.err(`System update failed: ${error.message}`, "UPDATE_ERROR");
+      await api.sendMessage(
+        `❌ System update failed:\n${error.message}\n` +
+        `Attempting to restore from backup...`,
+        event.threadID
+      );
+      
+      // Restore from backup if update failed
+      try {
+        const backupConfig = JSON.parse(fs.readFileSync(path.join(global.client.mainPath, 'config_backup.json'), 'utf8'));
+        fs.writeFileSync(path.join(global.client.mainPath, 'config.json'), JSON.stringify(backupConfig, null, 2));
+        await api.sendMessage("✅ Configuration restored from backup.", event.threadID);
+      } catch (restoreError) {
+        logger.err(`Failed to restore from backup: ${restoreError.message}`, "UPDATE_ERROR");
+        await api.sendMessage(
+          `⚠️ Failed to restore from backup. Manual intervention required.\n` +
+          `Error: ${restoreError.message}`,
+          event.threadID
+        );
+      }
+    }
   }
 };
 
