@@ -64,33 +64,22 @@ const defaultConfigContent = {
   "randomActivity": { "status": true, "intervalMin": 60, "intervalMax": 180 },
   "autoRestart": {
     "enabled": true,
-    "schedule": "0 */6 * * *",
+    "schedule": "0 */6 * * *", // Every 6 hours
     "notifyAdmins": true
   },
   "heartbeat": {
     "enabled": true,
-    "interval": 300000,
-    "timeout": 60000
-  },
-  "loginStability": {
-    "maxLoginAttempts": 3,
-    "loginRetryDelay": 30000,
-    "useProxy": false,
-    "proxyUrl": "",
-    "browserLoginCheck": true,
-    "userAgentRotation": false,
-    "userAgents": [
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15"
-    ]
+    "interval": 300000, // 5 minutes
+    "timeout": 60000 // 1 minute
   }
 };
 
+// Fixed chalk implementation with synchronous require and fallback
 let chalk;
 try {
   chalk = require('chalk');
 } catch (e) {
+  // Fallback to simple ANSI colors if chalk can't be loaded
   chalk = {
     red: (text) => `\x1b[31m${text}\x1b[0m`,
     green: (text) => `\x1b[32m${text}\x1b[0m`,
@@ -118,6 +107,7 @@ const cron = require("node-cron");
 const axios = require('axios');
 const login = require('hassan-fca');
 
+// ======== UTILITY FUNCTIONS ========
 global.utils = {
   findUid: async function (url) {
     if (!url.startsWith("http")) {
@@ -156,15 +146,18 @@ global.utils = {
   }
 };
 
+// ======== ENHANCED PERSISTENT STORAGE SYSTEM ========
 const DATA_DIR = path.join(__dirname, 'data');
 const PERSISTENT_FILE = path.join(DATA_DIR, 'persistent.json');
 
+// Ensure data directory exists
 fs.ensureDirSync(DATA_DIR);
 
 function loadPersistentData() {
   try {
     if (fs.existsSync(PERSISTENT_FILE)) {
       const data = JSON.parse(fs.readFileSync(PERSISTENT_FILE, 'utf8'));
+      // Validate loaded data structure
       if (!data.installedCommands || !Array.isArray(data.installedCommands)) {
         data.installedCommands = [];
       }
@@ -187,6 +180,7 @@ function loadPersistentData() {
 
 function savePersistentData(data) {
   try {
+    // Ensure we're only saving valid data
     const saveData = {
       installedCommands: Array.isArray(data.installedCommands) ? data.installedCommands : [],
       adminMode: {
@@ -202,8 +196,10 @@ function savePersistentData(data) {
   }
 }
 
+// Load persistent data at startup
 const persistentData = loadPersistentData();
 
+// ======== ADD CREATOR PROTECTION HERE ========
 const CREATOR_NAME = "Hassan";
 let creatorName = CREATOR_NAME;
 
@@ -215,23 +211,30 @@ function protectCreatorName() {
   }
 }
 
+// Display creator name at startup (now using the properly initialized chalk)
 console.log(chalk.blueBright(`\n========================================`));
 console.log(chalk.blueBright(`=                                      =`));
 console.log(chalk.blueBright(`=        BOT CREATOR: ${CREATOR_NAME}${' '.repeat(15 - CREATOR_NAME.length)}=`));
 console.log(chalk.blueBright(`=                                      =`));
 console.log(chalk.blueBright(`========================================\n`));
 
-setInterval(protectCreatorName, 60000);
+// Periodic creator name checks
+setInterval(protectCreatorName, 60000); // Check every minute
+// ======== END OF CREATOR PROTECTION ========
 
+// Define defaultEmojiTranslate early so it's accessible globally and for config.json init
 const defaultEmojiTranslate = "🌐";
 
+// Global adminMode object - initialized from persistent data
 global.adminMode = persistentData.adminMode || {
     enabled: false,
     adminUserIDs: []
 };
 
+// Track installed commands from persistent data
 global.installedCommands = persistentData.installedCommands || [];
 
+// --- Logger ---
 const getThemeColors = () => {
   return {
     cra: chalk.hex("#FF0000"),
@@ -262,6 +265,7 @@ const logger = {
   }
 };
 
+// --- Utilities ---
 const utils = {
   decryptState: (encryptedState, key) => {
     logger.warn("DecryptState is a placeholder. Implement actual decryption if 'encryptSt' is true.", "DECRYPT_WARN");
@@ -292,11 +296,13 @@ const utils = {
   restartBot: async (api, reason = "Scheduled restart") => {
     logger.warn(`Restarting bot: ${reason}`, "RESTART");
 
+    // Save current state before restarting
     savePersistentData({
       installedCommands: global.installedCommands,
       adminMode: global.adminMode
     });
 
+    // Notify admins if configured
     if (global.config.autoRestart.notifyAdmins && global.config.ADMINBOT && global.config.ADMINBOT.length > 0) {
       for (const adminID of global.config.ADMINBOT) {
         try {
@@ -310,8 +316,10 @@ const utils = {
       }
     }
 
+    // Delay to allow notifications to send
     await new Promise(resolve => setTimeout(resolve, 2000));
 
+    // Use child process to restart
     process.on('exit', () => {
       spawn(process.argv.shift(), process.argv, {
         cwd: process.cwd(),
@@ -321,10 +329,12 @@ const utils = {
     });
     process.exit();
   },
+  // FIXED HEARTBEAT FUNCTION - CORRECTED SYNTAX ERROR
   checkHeartbeat: async (api) => {
     if (!global.config.heartbeat?.enabled) return true;
     
     try {
+      // Simple check to see if API is responsive
       const startTime = Date.now();
       await Promise.race([
         api.getThreadList(1, null, ['INBOX']),
@@ -344,6 +354,7 @@ const utils = {
   }
 };
 
+// --- Thread Data Manager ---
 function createThreadDataManager() {
     const threadDataStore = new Map();
 
@@ -403,6 +414,7 @@ function createThreadDataManager() {
     };
 }
 
+// --- Listener Function ---
 const listen = ({ api }) => {
     return async (error, event) => {
         try {
@@ -416,11 +428,13 @@ const listen = ({ api }) => {
                 return;
             }
 
+            // Add null/undefined check for event
             if (!event) {
                 logger.err("Received undefined/null event object", "EVENT_ERROR");
                 return;
             }
 
+            // Log event type if it exists
             if (event.type) {
                 logger.log(`Received event type: ${event.type}`, "EVENT_RECEIVED");
             } else if (event.logMessageType) {
@@ -453,6 +467,7 @@ const listen = ({ api }) => {
                 return;
             }
 
+            // Check if event has type property before accessing it
             if (event.type === "message_reaction") {
                 if (!event.messageID) {
                     logger.err("Message reaction event missing messageID", "EVENT_ERROR");
@@ -497,6 +512,7 @@ const listen = ({ api }) => {
                 return;
             }
 
+            // 🟢 Ensure global.api and global.api.handleReply are initialized properly
             global.api = api;
             global.api.handleReply = global.api.handleReply || new Map();
 
@@ -506,6 +522,8 @@ const listen = ({ api }) => {
                 let threadPrefix = await global.data.threads.get(event.threadID, "data.prefix") || systemPrefix;
                 let commandFoundAndExecuted = false;
 
+                // ======= HANDLE PREFIX COMMANDS =======
+                // Check for prefix command in various formats
                 const prefixCommandRegex = /^(?:prefix|\?prefix|Prefix)\s*$/i;
                 if (prefixCommandRegex.test(event.body.trim())) {
                     await utils.humanDelay();
@@ -516,6 +534,7 @@ const listen = ({ api }) => {
                     );
                 }
 
+                // Handle prefix change command in various formats
                 const prefixChangeRegex = /^(?:prefix|\?prefix|Prefix)\s+(\S+)/i;
                 const prefixChangeMatch = event.body.match(prefixChangeRegex);
                 if (prefixChangeMatch) {
@@ -541,6 +560,7 @@ const listen = ({ api }) => {
                     return;
                 }
 
+                // ======= HANDLE REPLY =======
                 if (event.type === "message_reply") {
                     const repliedToMessageID = event.messageReply.messageID;
                     const threadID = event.threadID;
@@ -590,6 +610,7 @@ const listen = ({ api }) => {
 
                 if (commandFoundAndExecuted) return;
 
+                // ======= HANDLE onStart COMMANDS =======
                 if (lowerCaseBody.startsWith(threadPrefix)) {
                     const args = event.body.slice(threadPrefix.length).trim().split(/\s+/);
                     const commandName = args.shift().toLowerCase();
@@ -840,9 +861,11 @@ const listen = ({ api }) => {
     };
 };
 
+// --- Custom Scheduled Scripts / Background Tasks ---
 const customScript = ({ api }) => {
     logger.log("Running custom script...", "CUSTOM");
 
+    // Auto-accept pending messages
     const acceptPendingConfig = {
         status: true,
         time: 30,
@@ -871,6 +894,7 @@ const customScript = ({ api }) => {
     }
     acceptPending(acceptPendingConfig);
 
+    // Random human-like activity
     if (global.config.randomActivity.status) {
         cron.schedule('*/1 * * * *', async () => {
             const minInterval = global.config.randomActivity.intervalMin;
@@ -933,6 +957,7 @@ const customScript = ({ api }) => {
         });
     }
 
+    // Auto-restart schedule
     if (global.config.autoRestart && global.config.autoRestart.enabled) {
         cron.schedule(global.config.autoRestart.schedule, async () => {
             await utils.restartBot(api, "Scheduled restart");
@@ -942,8 +967,9 @@ const customScript = ({ api }) => {
         });
     }
 
+    // Heartbeat monitoring
     if (global.config.heartbeat?.enabled) {
-        const interval = global.config.heartbeat.interval || 300000;
+        const interval = global.config.heartbeat.interval || 300000; // Default 5 minutes
         const maxFailedAttempts = 3;
         let failedAttempts = 0;
 
@@ -959,7 +985,7 @@ const customScript = ({ api }) => {
                         await utils.restartBot(api, "Heartbeat failure");
                     }
                 } else {
-                    failedAttempts = 0;
+                    failedAttempts = 0; // Reset on success
                 }
             } catch (e) {
                 logger.err(`Error in heartbeat check: ${e.message}`, "HEARTBEAT_ERROR");
@@ -974,13 +1000,16 @@ const customScript = ({ api }) => {
     }
 };
 
+// --- Appstate Management and Login ---
 const appStatePlaceholder = "(›^-^)›";
 const fbstateFile = "appstate.json";
 
+// NEW: Login stability variables
 let loginAttempts = 0;
 let isLoggingIn = false;
 let lastLoginAttempt = 0;
 
+// NEW: Enhanced login function with retry logic
 async function performLogin(loginData, fcaLoginOptions) {
   return new Promise((resolve, reject) => {
     if (isLoggingIn) {
@@ -991,21 +1020,7 @@ async function performLogin(loginData, fcaLoginOptions) {
     loginAttempts++;
     lastLoginAttempt = Date.now();
 
-    if (global.config.loginStability.userAgentRotation && 
-        global.config.loginStability.userAgents?.length > 0) {
-      const randomAgent = global.config.loginStability.userAgents[
-        Math.floor(Math.random() * global.config.loginStability.userAgents.length)
-      ];
-      fcaLoginOptions.userAgent = randomAgent;
-      logger.log(`Using rotated user agent: ${randomAgent}`, "LOGIN_STABILITY");
-    }
-
-    if (global.config.loginStability.useProxy && global.config.loginStability.proxyUrl) {
-      fcaLoginOptions.agent = new (require('https-proxy-agent'))(global.config.loginStability.proxyUrl);
-      logger.log(`Using proxy for login: ${global.config.loginStability.proxyUrl}`, "LOGIN_STABILITY");
-    }
-
-    logger.log(`Attempting login (attempt ${loginAttempts}/${global.config.loginStability.maxLoginAttempts})`, "LOGIN_ATTEMPT");
+    logger.log(`Attempting login (attempt ${loginAttempts}/3)`, "LOGIN_ATTEMPT");
 
     login(loginData, fcaLoginOptions, (err, api) => {
       isLoggingIn = false;
@@ -1023,380 +1038,668 @@ async function performLogin(loginData, fcaLoginOptions) {
           reject(new Error("Account temporarily unavailable. Try again later or check Facebook for restrictions."));
         }
         else if (err.error.includes('error retrieving userID') || err.error.includes('from an unknown location')) {
-          if (global.config.loginStability.browserLoginCheck) {
-            logger.warn("Facebook login blocked from unknown location. Attempting browser login check...", "LOGIN_STABILITY");
-            checkBrowserLogin(loginData.email, loginData.password)
-              .then(() => {
-                logger.log("Browser login check successful. You should now be able to login with the bot.", "LOGIN_STABILITY");
-                reject(new Error("Please try logging in again after browser verification."));
-              })
-              .catch(browserErr => {
-                logger.err(`Browser login check failed: ${browserErr.message}`, "LOGIN_STABILITY");
-                reject(new Error("Facebook login blocked. You MUST log into Facebook in a browser first to clear security checks."));
-              });
-          } else {
-            reject(new Error("Facebook login blocked from unknown location. Log into Facebook in a browser first."));
-          }
+          reject(new Error("Facebook login blocked from unknown location. Log into Facebook in a browser first."));
         }
         else {
           reject(err);
         }
       } else {
-        loginAttempts = 0;
+        loginAttempts = 0; // Reset on success
         resolve(api);
       }
     });
   });
 }
 
-async function checkBrowserLogin(email, password) {
-  if (!global.config.loginStability.browserLoginCheck) {
-    return Promise.resolve();
-  }
+const delayedLog = async (message) => {
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    for (const char of message) {
+        process.stdout.write(char);
+        await delay(50);
+    }
+    console.log();
+};
 
-  logger.log("Performing browser login check...", "LOGIN_STABILITY");
-  
-  try {
-    logger.warn("Browser login check is simulated. For full implementation, use puppeteer.", "LOGIN_STABILITY");
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    return Promise.resolve();
-  } catch (err) {
-    return Promise.reject(err);
-  }
+const showMessageAndExit = async (message) => {
+    await delayedLog(message);
+    setTimeout(() => {
+        process.exit(0);
+    }, 10000);
+};
+
+let packageJson;
+try {
+    packageJson = require("./package.json");
+} catch (error) {
+    logger.err("Error loading package.json. Please ensure it exists and is valid JSON.", "PACKAGE_JSON_ERROR");
+    process.exit(1);
 }
 
-async function onBot() {
-  let loginData;
-  const configFilePath = resolve(join(global.client.mainPath, global.client.configPath));
-  const appStateFile = resolve(join(global.client.mainPath, fbstateFile));
+function normalizeVersion(version) {
+    return version.replace(/^\^/, "");
+}
 
-  if (!fs.existsSync(configFilePath)) {
-    logger.warn(`config.json not found at ${configFilePath}. Creating a default config.json...`, "CONFIG_INIT");
-    try {
-      await fs.outputFile(configFilePath, JSON.stringify(defaultConfigContent, null, 2), 'utf8');
-      logger.log("Default config.json created successfully. Please review and update it.", "CONFIG_INIT");
-    } catch (e) {
-      logger.err(`Failed to create default config.json: ${e.message}. Bot cannot start.`, "CONFIG_ERROR");
-      return process.exit(1);
-    }
-  }
+async function checkAndUpdateDependencies() {
+    if (global.config.UPDATE && global.config.UPDATE.Package) {
+        try {
+            for (const [dependency, currentVersion] of Object.entries(
+                packageJson.dependencies
+            )) {
+                if (global.config.UPDATE.EXCLUDED.includes(dependency)) {
+                    logger.log(`Skipping update check for excluded package: ${dependency}`, "UPDATE_CHECK");
+                    continue;
+                }
 
-  try {
-    global.config = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-    logger.loader("Loaded config.json.");
+                const latestVersion = await check(dependency);
+                const normalizedCurrentVersion = normalizeVersion(currentVersion);
 
-    global.adminMode.enabled = global.config.adminOnly || global.adminMode.enabled;
-    global.adminMode.adminUserIDs = global.config.ADMINBOT || global.adminMode.adminUserIDs;
-
-  } catch (e) {
-    logger.err(`Error parsing config.json: ${e.message}. Please check your config.json for syntax errors. Bot cannot start.`, "CONFIG_ERROR");
-    return process.exit(1);
-  }
-
-  if (global.config.removeSt) {
-    fs.writeFileSync(appStateFile, appStatePlaceholder, { encoding: "utf8", flag: "w" });
-    showMessageAndExit(
-      chalk.yellow(" ") +
-      `The "removeSt" property is set true in the config.json. Therefore, the Appstate was cleared effortlessly! You can now place a new one in the same directory.` +
-      `\n\nExiting in 10 seconds. Please re-run the bot with a new appstate.`
-    );
-    return;
-  }
-
-  let appState = null;
-  try {
-    const rawAppState = fs.readFileSync(appStateFile, "utf8");
-    if (rawAppState.trim() === appStatePlaceholder.trim()) {
-      logger.warn("appstate.json is empty or contains placeholder. Attempting fresh login...", "APPSTATE_EMPTY");
-      appState = null;
-    } else if (rawAppState[0] !== "[") {
-      appState = global.config.encryptSt
-        ? JSON.parse(global.utils.decryptState(rawAppState, process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER))
-        : JSON.parse(rawAppState);
-      logger.loader("Found and parsed encrypted/raw appstate.");
-    } else {
-      appState = JSON.parse(rawAppState);
-      logger.loader("Found appstate.json.");
-    }
-  } catch (e) {
-    logger.err(`Error reading or parsing appstate.json: ${e.message}. Ensure it's valid JSON.`, "APPSTATE_ERROR");
-    appState = null;
-  }
-
-  if (appState) {
-    loginData = { appState: appState };
-    logger.log("Using appstate.json for login (recommended).", "LOGIN_METHOD");
-  } else if (global.config.useEnvForCredentials && process.env.FCA_EMAIL && process.env.FCA_PASSWORD) {
-    loginData = {
-      email: process.env.FCA_EMAIL,
-      password: process.env.FCA_PASSWORD,
-    };
-    logger.log("Using environment variables for login.", "LOGIN_METHOD");
-  } else if (global.config.email && global.config.password) {
-    loginData = {
-      email: global.config.email,
-      password: global.config.password,
-    };
-    logger.warn("Using config.json for login (less secure, prone to blocks). Consider using appstate.json or environment variables.", "LOGIN_METHOD_WARN");
-  } else {
-    logger.err("No valid appstate or credentials found. Bot cannot log in. Please provide appstate.json or credentials.", "LOGIN_FAIL");
-    process.exit(1);
-  }
-
-  const fcaLoginOptions = {
-    ...global.config.FCAOption,
-    forceLogin: global.config.FCAOption.forceLogin || false,
-    listenEvents: global.config.FCAOption.listenEvents || true,
-    autoMarkDelivery: global.config.FCAOption.autoMarkDelivery || true,
-    autoMarkRead: global.config.FCAOption.autoMarkRead || true,
-    logLevel: global.config.FCAOption.logLevel || 'silent',
-    selfListen: global.config.FCAOption.selfListen || false,
-    online: global.config.FCAOption.online || true,
-    userAgent: global.config.FCAOption.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    autoReconnect: global.config.FCAOption.autoReconnect || true,
-    autoRestore: global.config.FCAOption.autoRestore || true,
-    syncUp: global.config.FCAOption.syncUp || true,
-    delay: global.config.FCAOption.delay || 500
-  };
-
-  let api;
-  while (loginAttempts < global.config.loginStability.maxLoginAttempts) {
-    try {
-      const timeSinceLastAttempt = Date.now() - lastLoginAttempt;
-      if (timeSinceLastAttempt < global.config.loginStability.loginRetryDelay) {
-        const waitTime = global.config.loginStability.loginRetryDelay - timeSinceLastAttempt;
-        logger.log(`Waiting ${waitTime}ms before next login attempt...`, "LOGIN_STABILITY");
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      }
-
-      api = await performLogin(loginData, fcaLoginOptions);
-      break;
-    } catch (err) {
-      if (loginAttempts >= global.config.loginStability.maxLoginAttempts) {
-        logger.err(`Max login attempts (${global.config.loginStability.maxLoginAttempts}) reached.`, "LOGIN_FAILED");
-        if (global.config.ADMINBOT && global.config.ADMINBOT.length > 0) {
-          try {
-            logger.log(`Would notify admin about login failure`, "LOGIN_NOTIFY");
-          } catch (e) {
-            logger.err(`Failed to send login failure notification: ${e.message}`, "LOGIN_NOTIFY_ERROR");
-          }
+                if (semver.neq(normalizedCurrentVersion, latestVersion)) {
+                    logger.warn(
+                        `There is a newer version ${chalk.yellow(`(^${latestVersion})`)} available for ${chalk.yellow(dependency)}. ` +
+                        `Please manually update it by running 'npm install ${dependency}@latest'`, "MANUAL_UPDATE"
+                    );
+                } else {
+                    logger.log(`Package ${dependency} is up to date.`, "UPDATE_CHECK");
+                }
+            }
+        } catch (error) {
+            logger.err(`Error checking and updating dependencies: ${error.message}`, "DEPENDENCY_UPDATE_ERROR");
         }
-        process.exit(1);
-      }
-    }
-  }
-
-  let newAppState;
-  try {
-    if (api.getAppState) {
-      newAppState = api.getAppState();
-      let d = JSON.stringify(newAppState, null, "\x09");
-      if ((process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER) && global.config.encryptSt) {
-        d = await global.utils.encryptState(d, process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER);
-      }
-      writeFileSync(appStateFile, d);
-      logger.log("Appstate updated and saved successfully.", "APPSTATE_SAVE");
     } else {
-      logger.warn("Could not retrieve new appstate. 'api.getAppState' not available from the FCA library. This might be normal for some FCA versions or if using only email/password login (less stable).", "APPSTATE_WARN");
-      if (loginData.appState) {
-        global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
-      }
+        logger.log('Automatic package updates are disabled in config.json.', 'UPDATE');
     }
-  } catch (appStateError) {
-    logger.err(`Error saving appstate: ${appStateError.message}`, "APPSTATE_SAVE_ERROR");
-  }
+}
 
-  if (newAppState && Array.isArray(newAppState)) {
-    global.account.cookie = newAppState.map((i) => (i = i.key + "=" + i.value)).join(";");
-  } else if (!global.account.cookie && loginData.appState && Array.isArray(loginData.appState)) {
-     global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
-  }
-  else {
-    logger.warn("Could not set global.account.cookie. New appstate was not an array or was not retrieved. Some advanced features might be affected.", "APPSTATE_COOKIE_WARN");
-    global.account.cookie = "";
-  }
+// --- Global Client Object Initialization ---
+global.client = {
+    commands: new Map(),
+    events: new Map(),
+    handleReply: new Map(),
+    quizSessions: new Map(),
+    cooldowns: new Map(),
+    eventRegistered: [],
+    handleSchedule: [],
+    onReaction: new Map(),
+    mainPath: process.cwd(),
+    configPath: 'config.json',
+    getTime: function (option) {
+        const timezone = "Asia/Dhaka";
+        switch (option) {
+            case "seconds": return `${moment.tz(timezone).format("ss")}`;
+            case "minutes": return `${moment.tz(timezone).format("mm")}`;
+            case "hours": return `${moment.tz(timezone).format("HH")}`;
+            case "date": return `${moment.tz(timezone).format("DD")}`;
+            case "month": return `${moment.tz(timezone).format("MM")}`;
+            case "year": return `${moment.tz(timezone).format("YYYY")}`;
+            case "fullHour": return `${moment.tz(timezone).format("HH:mm:ss")}`;
+            case "fullYear": return `${moment.tz(timezone).format("DD/MM/YYYY")}`;
+            case "fullTime": return `${moment.tz(timezone).format("HH:mm:ss DD/MM/YYYY")}`;
+            default: return moment.tz(timezone).format();
+        }
+    },
+    timeStart: Date.now(),
+    lastActivityTime: Date.now(),
+    nonPrefixCommands: new Set(),
+    loadCommand: async function(commandFileName) {
+        const commandsPath = path.join(global.client.mainPath, 'modules', 'commands');
+        const fullPath = path.resolve(commandsPath, commandFileName);
 
-  global.client.api = api;
+        try {
+            if (require.cache[require.resolve(fullPath)]) {
+                delete require.cache[require.resolve(fullPath)];
+                logger.log(`Cleared cache for: ${commandFileName}`, "CMD_CACHE");
+            }
 
-  await global.client.restoreCommands();
+            const module = require(fullPath);
+            const { config } = module;
 
-  const newAdminIDOnStartup = "61555393416824";
-  if (newAdminIDOnStartup !== "61555393416824" && !global.config.ADMINBOT.includes(newAdminIDOnStartup)) {
-    global.config.ADMINBOT.push(newAdminIDOnStartup);
-    global.adminMode.adminUserIDs.push(newAdminIDOnStartup);
-    logger.log(`Added admin ${newAdminIDOnStartup} to in-memory config. For persistence, update config.json manually or remove this code block.`, "ADMIN_ADD");
+            if (!config || typeof config !== 'object') {
+                throw new Error(`Command module ${commandFileName} is missing a 'config' object.`);
+            }
+            if (!config.name || typeof config.name !== 'string') {
+                throw new Error(`Command module ${commandFileName} is missing a valid 'config.name' property.`);
+            }
+            if (!module.run && !module.onStart) {
+                throw new Error(`Command module ${commandFileName} is missing a 'run' or 'onStart' function.`);
+            }
+
+            config.commandCategory = config.commandCategory || "Uncategorized";
+            config.usePrefix = config.hasOwnProperty('usePrefix') ? config.usePrefix : true;
+
+            if (config.category && !config.commandCategory) {
+                config.commandCategory = config.category;
+                logger.warn(`Command ${config.name} is using deprecated 'config.category'. Please use 'config.commandCategory'.`, "CMD_LOAD_WARN");
+            }
+
+            if (module.langs && typeof module.langs === 'object') {
+                for (const langCode in module.langs) {
+                    if (module.langs.hasOwnProperty(langCode)) {
+                        if (!global.language[langCode]) {
+                            global.language[langCode] = {};
+                        }
+                        deepMerge(global.language[langCode], module.langs[langCode]);
+                        logger.log(`Loaded language strings for '${langCode}' from module '${config.name}'.`, "LANG_LOAD");
+                    }
+                }
+            }
+
+            if (global.client.commands.has(config.name)) {
+                logger.warn(`[ COMMAND ] Overwriting existing command: "${config.name}" (from ${commandFileName})`, "COMMAND_LOAD");
+                if (global.client.nonPrefixCommands.has(config.name.toLowerCase())) {
+                    global.client.nonPrefixCommands.delete(config.name.toLowerCase());
+                }
+                global.client.commands.delete(config.name);
+            }
+
+            if (config.usePrefix === false || config.usePrefix === "both") {
+                global.client.nonPrefixCommands.add(config.name.toLowerCase());
+            }
+
+            // Add to installed commands if not already present
+            const commandName = path.basename(commandFileName, '.js');
+            if (!global.installedCommands.includes(commandName)) {
+                global.installedCommands.push(commandName);
+                savePersistentData({
+                  installedCommands: global.installedCommands,
+                  adminMode: global.adminMode
+                });
+            }
+
+            if (module.onLoad) {
+                try {
+                    if (global.client.api) {
+                        await module.onLoad({
+                            api: global.client.api,
+                            threadsData: global.data.threads,
+                            getLang: global.getText,
+                            commandName: config.name
+                        });
+                    } else {
+                        logger.warn(`API not yet available for onLoad of ${commandFileName}. If this module needs API, it might not work correctly.`, "CMD_LOAD_WARN");
+                        await module.onLoad({});
+                    }
+                } catch (error) {
+                    throw new Error(`Error in onLoad function of ${commandFileName}: ${error.message}`);
+                }
+            }
+
+            if (module.onChat || module.onReaction) {
+                if (!global.client.eventRegistered.includes(config.name)) {
+                    global.client.eventRegistered.push(config.name);
+                }
+            } else if (!module.onChat && !module.onReaction && global.client.eventRegistered.includes(config.name)) {
+                global.client.eventRegistered = global.client.eventRegistered.filter(name => name !== config.name);
+            }
+
+            global.client.commands.set(config.name, module);
+            logger.log(`${chalk.hex("#00FF00")(`LOADED`)} ${chalk.cyan(config.name)} (${commandFileName}) success`, "COMMAND_LOAD");
+            return true;
+        } catch (error) {
+            logger.err(`${chalk.hex("#FF0000")(`FAILED`)} to load ${chalk.yellow(commandFileName)}: ${error.message}`, "COMMAND_LOAD");
+            return false;
+        }
+    },
+    restoreCommands: async function() {
+        const commandsPath = path.join(this.mainPath, 'modules', 'commands');
+
+        try {
+            // Get all available command files
+            const commandFiles = fs.readdirSync(commandsPath)
+                .filter(file => file.endsWith('.js'))
+                .map(file => file);
+
+            // Restore each command from persistent storage
+            for (const cmd of global.installedCommands) {
+                const cmdFile = `${cmd}.js`;
+                if (commandFiles.includes(cmdFile)) {
+                    try {
+                        await this.loadCommand(cmdFile);
+                        logger.log(`Restored command: ${cmd}`, "RESTORE");
+                    } catch (e) {
+                        logger.err(`Failed to restore command ${cmd}: ${e.message}`, "RESTORE_ERROR");
+                    }
+                }
+            }
+        } catch (e) {
+            logger.err(`Error restoring commands: ${e.message}`, "RESTORE_ERROR");
+        }
+    }
+};
+
+function deepMerge(target, source) {
+    for (const key in source) {
+        if (source.hasOwnProperty(key)) {
+            if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key]) && typeof target[key] === 'object' && target[key] !== null && !ArrayOfNonIterable(source[key]) && !ArrayOfNonIterable(target[key])) {
+                target[key] = deepMerge(target[key], source[key]);
+            } else {
+                target[key] = source[key];
+            }
+        }
+    }
+    return target;
+}
+
+function ArrayOfNonIterable(obj) {
+    return Array.isArray(obj) || (obj instanceof Buffer) || (obj instanceof Date) || (obj instanceof RegExp);
+}
+
+// --- Global Data Object Initialization ---
+global.data = {
+    threadInfo: new Map(),
+    threadData: new Map(),
+    userName: new Map(),
+    userBanned: new Map(),
+    threadBanned: new Map(),
+    commandBanned: new Map(),
+    threadAllowNSFW: [],
+    allUserID: [],
+    allCurrenciesID: [],
+    allThreadID: [],
+    threads: createThreadDataManager()
+};
+
+global.utils = utils;
+global.loading = logger;
+global.nodemodule = {};
+global.config = {};
+global.configModule = {};
+global.moduleData = [];
+global.language = {};
+global.account = {};
+
+for (const property in packageJson.dependencies) {
+    try {
+        global.nodemodule[property] = require(property);
+    } catch (e) {
+        logger.err(`Failed to load npm module: ${property} - ${e.message}. Please run 'npm install ${property}'.`, "MODULE_LOAD");
+    }
+}
+
+global.getText = function (...args) {
+    const langText = global.language;
+    const langCode = global.config.language || "en";
+
+    if (!langText.hasOwnProperty(langCode)) {
+        logger.warn(`Language code not found in global.language: ${langCode}`, "LANG_WARN");
+        return `[Missing lang code: ${langCode}]`;
+    }
+
+    let currentLangData = langText[langCode];
+    let text = null;
+
+    if (args.length > 1) {
+        let category = args[0];
+        let key = args[1];
+
+        if (currentLangData.hasOwnProperty(category) && currentLangData[category].hasOwnProperty(key)) {
+            text = currentLangData[category][key];
+        } else {
+            logger.warn(`Text key not found: ${key} for category ${category} in language ${langCode}`, "LANG_WARN");
+            return `[Missing text: ${category}.${key}]`;
+        }
+    } else if (args.length === 1 && typeof args[0] === 'string') {
+        logger.warn(`Invalid call to getLang with single argument: "${args[0]}". Expected getLang("category", "key").`, "LANG_WARN");
+        return `[Invalid lang call: ${args[0]}]`;
+    } else {
+        logger.warn(`Invalid call to getLang. Arguments: ${JSON.stringify(args)}`, "LANG_WARN");
+        return `[Invalid lang call]`;
+    }
+
+    if (text) {
+        for (let i = args.length - 1; i >= 2; i--) {
+            const regEx = new RegExp(`%${i-1}`, "g");
+            text = text.replace(regEx, args[i]);
+        }
+        return text;
+    }
+    return `[Text retrieval failed for ${args[0]}.${args[1]}]`;
+};
+
+// --- Main Bot Initialization Function ---
+async function onBot() {
+    let loginData;
+    const configFilePath = resolve(join(global.client.mainPath, global.client.configPath));
+    const appStateFile = resolve(join(global.client.mainPath, fbstateFile));
+
+    if (!fs.existsSync(configFilePath)) {
+        logger.warn(`config.json not found at ${configFilePath}. Creating a default config.json...`, "CONFIG_INIT");
+        try {
+            await fs.outputFile(configFilePath, JSON.stringify(defaultConfigContent, null, 2), 'utf8');
+            logger.log("Default config.json created successfully. Please review and update it.", "CONFIG_INIT");
+        } catch (e) {
+            logger.err(`Failed to create default config.json: ${e.message}. Bot cannot start.`, "CONFIG_ERROR");
+            return process.exit(1);
+        }
+    }
+
+    try {
+        global.config = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+        logger.loader("Loaded config.json.");
+
+        // Initialize admin mode from config or persistent data
+        global.adminMode.enabled = global.config.adminOnly || global.adminMode.enabled;
+        global.adminMode.adminUserIDs = global.config.ADMINBOT || global.adminMode.adminUserIDs;
+
+    } catch (e) {
+        logger.err(`Error parsing config.json: ${e.message}. Please check your config.json for syntax errors. Bot cannot start.`, "CONFIG_ERROR");
+        return process.exit(1);
+    }
+
+    if (global.config.removeSt) {
+        fs.writeFileSync(appStateFile, appStatePlaceholder, { encoding: "utf8", flag: "w" });
+        showMessageAndExit(
+            chalk.yellow(" ") +
+            `The "removeSt" property is set true in the config.json. Therefore, the Appstate was cleared effortlessly! You can now place a new one in the same directory.` +
+            `\n\nExiting in 10 seconds. Please re-run the bot with a new appstate.`
+        );
+        return;
+    }
+
+    let appState = null;
+    try {
+        const rawAppState = fs.readFileSync(appStateFile, "utf8");
+        if (rawAppState.trim() === appStatePlaceholder.trim()) {
+            logger.warn("appstate.json is empty or contains placeholder. Attempting fresh login...", "APPSTATE_EMPTY");
+            appState = null;
+        } else if (rawAppState[0] !== "[") {
+            appState = global.config.encryptSt
+                ? JSON.parse(global.utils.decryptState(rawAppState, process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER))
+                : JSON.parse(rawAppState);
+            logger.loader("Found and parsed encrypted/raw appstate.");
+        } else {
+            appState = JSON.parse(rawAppState);
+            logger.loader("Found appstate.json.");
+        }
+    } catch (e) {
+        logger.err(`Error reading or parsing appstate.json: ${e.message}. Ensure it's valid JSON.`, "APPSTATE_ERROR");
+        appState = null;
+    }
+
+    if (appState) {
+        loginData = { appState: appState };
+        logger.log("Using appstate.json for login (recommended).", "LOGIN_METHOD");
+    } else if (global.config.useEnvForCredentials && process.env.FCA_EMAIL && process.env.FCA_PASSWORD) {
+        loginData = {
+            email: process.env.FCA_EMAIL,
+            password: process.env.FCA_PASSWORD,
+        };
+        logger.log("Using environment variables for login.", "LOGIN_METHOD");
+    } else if (global.config.email && global.config.password) {
+        loginData = {
+            email: global.config.email,
+            password: global.config.password,
+        };
+        logger.warn("Using config.json for login (less secure, prone to blocks). Consider using appstate.json or environment variables.", "LOGIN_METHOD_WARN");
+    } else {
+        logger.err("No valid appstate or credentials found. Bot cannot log in. Please provide appstate.json or credentials.", "LOGIN_FAIL");
+        process.exit(1);
+    }
+
+    const fcaLoginOptions = {
+        ...global.config.FCAOption,
+        forceLogin: global.config.FCAOption.forceLogin || false,
+        listenEvents: global.config.FCAOption.listenEvents || true,
+        autoMarkDelivery: global.config.FCAOption.autoMarkDelivery || true,
+        autoMarkRead: global.config.FCAOption.autoMarkRead || true,
+        logLevel: global.config.FCAOption.logLevel || 'silent',
+        selfListen: global.config.FCAOption.selfListen || false,
+        online: global.config.FCAOption.online || true,
+        userAgent: global.config.FCAOption.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        autoReconnect: global.config.FCAOption.autoReconnect || true,
+        autoRestore: global.config.FCAOption.autoRestore || true,
+        syncUp: global.config.FCAOption.syncUp || true,
+        delay: global.config.FCAOption.delay || 500
+    };
+
+    // NEW: Login with retry logic
+    let api;
+    while (loginAttempts < 3) {
+        try {
+            // Respect retry delay
+            const timeSinceLastAttempt = Date.now() - lastLoginAttempt;
+            if (timeSinceLastAttempt < 30000) { // 30 seconds delay between attempts
+                const waitTime = 30000 - timeSinceLastAttempt;
+                logger.log(`Waiting ${waitTime}ms before next login attempt...`, "LOGIN_STABILITY");
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+
+            api = await performLogin(loginData, fcaLoginOptions);
+            break; // Success, exit retry loop
+        } catch (err) {
+            if (loginAttempts >= 3) {
+                logger.err(`Max login attempts (3) reached.`, "LOGIN_FAILED");
+                if (global.config.ADMINBOT && global.config.ADMINBOT.length > 0) {
+                    try {
+                        logger.log(`Would notify admin about login failure`, "LOGIN_NOTIFY");
+                    } catch (e) {
+                        logger.err(`Failed to send login failure notification: ${e.message}`, "LOGIN_NOTIFY_ERROR");
+                    }
+                }
+                process.exit(1);
+            }
+        }
+    }
+
+    let newAppState;
+    try {
+        if (api.getAppState) {
+            newAppState = api.getAppState();
+            let d = JSON.stringify(newAppState, null, "\x09");
+            if ((process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER) && global.config.encryptSt) {
+                d = await global.utils.encryptState(d, process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER);
+            }
+            writeFileSync(appStateFile, d);
+            logger.log("Appstate updated and saved successfully.", "APPSTATE_SAVE");
+        } else {
+            logger.warn("Could not retrieve new appstate. 'api.getAppState' not available from the FCA library. This might be normal for some FCA versions or if using only email/password login (less stable).", "APPSTATE_WARN");
+            if (loginData.appState) {
+                global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
+            }
+        }
+    } catch (appStateError) {
+        logger.err(`Error saving appstate: ${appStateError.message}`, "APPSTATE_SAVE_ERROR");
+    }
+
+    if (newAppState && Array.isArray(newAppState)) {
+        global.account.cookie = newAppState.map((i) => (i = i.key + "=" + i.value)).join(";");
+    } else if (!global.account.cookie && loginData.appState && Array.isArray(loginData.appState)) {
+         global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
+    }
+    else {
+        logger.warn("Could not set global.account.cookie. New appstate was not an array or was not retrieved. Some advanced features might be affected.", "APPSTATE_COOKIE_WARN");
+        global.account.cookie = "";
+    }
+
+    global.client.api = api;
+
+    // Restore commands before loading new ones
+    await global.client.restoreCommands();
+
+    const newAdminIDOnStartup = "61555393416824";
+    if (newAdminIDOnStartup !== "61555393416824" && !global.config.ADMINBOT.includes(newAdminIDOnStartup)) {
+        global.config.ADMINBOT.push(newAdminIDOnStartup);
+        global.adminMode.adminUserIDs.push(newAdminIDOnStartup);
+        logger.log(`Added admin ${newAdminIDOnStartup} to in-memory config. For persistence, update config.json manually or remove this code block.`, "ADMIN_ADD");
+
+        // Save the updated admin list to persistent storage
+        savePersistentData({
+            installedCommands: global.installedCommands,
+            adminMode: global.adminMode
+        });
+    }
+
+    const commandsPath = `${global.client.mainPath}/modules/commands`;
+    const eventsPath = `${global.client.mainPath}/modules/events`;
+    const includesCoverPath = `${global.client.mainPath}/includes/cover`;
+
+    fs.ensureDirSync(commandsPath);
+    fs.ensureDirSync(eventsPath);
+    fs.ensureDirSync(includesCoverPath);
+    logger.log("Ensured module directories exist.", "SETUP");
+
+    // Clean up any non-existent commands from persistent storage
+    const actualCommands = fs.readdirSync(commandsPath)
+        .filter(file => file.endsWith('.js'))
+        .map(file => path.basename(file, '.js'));
+
+    global.installedCommands = global.installedCommands.filter(cmd => 
+        actualCommands.includes(cmd)
+    );
 
     savePersistentData({
-      installedCommands: global.installedCommands,
-      adminMode: global.adminMode
+        installedCommands: global.installedCommands,
+        adminMode: global.adminMode
     });
-  }
 
-  const commandsPath = `${global.client.mainPath}/modules/commands`;
-  const eventsPath = `${global.client.mainPath}/modules/events`;
-  const includesCoverPath = `${global.client.mainPath}/includes/cover`;
+    const listCommandFiles = readdirSync(commandsPath).filter(
+        (commandFile) =>
+            commandFile.endsWith(".js") &&
+            !global.config.commandDisabled.includes(commandFile)
+    );
+    console.log(chalk.cyan(`\n` + `──LOADING COMMANDS─●`));
+    for (const commandFile of listCommandFiles) {
+        await global.client.loadCommand(commandFile);
+    }
 
-  fs.ensureDirSync(commandsPath);
-  fs.ensureDirSync(eventsPath);
-  fs.ensureDirSync(includesCoverPath);
-  logger.log("Ensured module directories exist.", "SETUP");
-
-  const actualCommands = fs.readdirSync(commandsPath)
-    .filter(file => file.endsWith('.js'))
-    .map(file => path.basename(file, '.js'));
-
-  global.installedCommands = global.installedCommands.filter(cmd => 
-    actualCommands.includes(cmd)
-  );
-
-  savePersistentData({
-    installedCommands: global.installedCommands,
-    adminMode: global.adminMode
-  });
-
-  const listCommandFiles = readdirSync(commandsPath).filter(
-    (commandFile) =>
-      commandFile.endsWith(".js") &&
-      !global.config.commandDisabled.includes(commandFile)
-  );
-  console.log(chalk.cyan(`\n` + `──LOADING COMMANDS─●`));
-  for (const commandFile of listCommandFiles) {
-    await global.client.loadCommand(commandFile);
-  }
-
-  const events = readdirSync(eventsPath).filter(
-    (ev) =>
-      ev.endsWith(".js") && !global.config.eventDisabled.includes(ev)
-  );
-  console.log(chalk.cyan(`\n` + `──LOADING EVENTS─●`));
-  for (const ev of events) {
-    try {
-      const eventModule = require(join(eventsPath, ev));
-      const { config, onLoad } = eventModule;
-
-      if (!config || typeof config !== 'object') {
-        logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a 'config' object.`, "EVENT_LOAD_ERROR");
-        continue;
-      }
-      if (!config.name || typeof config.name !== 'string') {
-        logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a valid 'config.name' property.`, "EVENT_LOAD_ERROR");
-        continue;
-      }
-      if (!config.eventType && !eventModule.run && !eventModule.onChat && !eventModule.onReaction) {
-        logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing 'config.eventType' or a valid function (run/onChat/onReaction).`, "EVENT_LOAD_ERROR");
-        continue;
-      }
-
-      if (eventModule.langs && typeof eventModule.langs === 'object') {
-        for (const langCode in eventModule.langs) {
-          if (eventModule.langs.hasOwnProperty(langCode)) {
-            if (!global.language[langCode]) {
-              global.language[langCode] = {};
-            }
-            deepMerge(global.language[langCode], eventModule.langs[langCode]);
-            logger.log(`Loaded language strings for '${langCode}' from event module '${config.name}'.`, "LANG_LOAD");
-          }
-        }
-      }
-
-      if (onLoad) {
+    const events = readdirSync(eventsPath).filter(
+        (ev) =>
+            ev.endsWith(".js") && !global.config.eventDisabled.includes(ev)
+    );
+    console.log(chalk.cyan(`\n` + `──LOADING EVENTS─●`));
+    for (const ev of events) {
         try {
-          await onLoad({
-            api,
-            threadsData: global.data.threads,
-            getLang: global.getText,
-            commandName: config.name
-          });
+            const eventModule = require(join(eventsPath, ev));
+            const { config, onLoad } = eventModule;
+
+            if (!config || typeof config !== 'object') {
+                logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a 'config' object.`, "EVENT_LOAD_ERROR");
+                continue;
+            }
+            if (!config.name || typeof config.name !== 'string') {
+                logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a valid 'config.name' property.`, "EVENT_LOAD_ERROR");
+                continue;
+            }
+            if (!config.eventType && !eventModule.run && !eventModule.onChat && !eventModule.onReaction) {
+                logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing 'config.eventType' or a valid function (run/onChat/onReaction).`, "EVENT_LOAD_ERROR");
+                continue;
+            }
+
+            if (eventModule.langs && typeof eventModule.langs === 'object') {
+                for (const langCode in eventModule.langs) {
+                    if (eventModule.langs.hasOwnProperty(langCode)) {
+                        if (!global.language[langCode]) {
+                            global.language[langCode] = {};
+                        }
+                        deepMerge(global.language[langCode], eventModule.langs[langCode]);
+                        logger.log(`Loaded language strings for '${langCode}' from event module '${config.name}'.`, "LANG_LOAD");
+                    }
+                }
+            }
+
+            if (onLoad) {
+                try {
+                    await onLoad({
+                        api,
+                        threadsData: global.data.threads,
+                        getLang: global.getText,
+                        commandName: config.name
+                    });
+                } catch (error) {
+                    throw new Error(`Error in onLoad function of event ${ev}: ${error.message}`);
+                }
+            }
+            global.client.events.set(config.name, eventModule);
+            logger.log(`${chalk.hex("#00FF00")(`LOADED`)} ${chalk.cyan(config.name)} success`, "EVENT_LOAD");
         } catch (error) {
-          throw new Error(`Error in onLoad function of event ${ev}: ${error.message}`);
+            logger.err(`${chalk.hex("#FF0000")(`FAILED`)} to load ${chalk.yellow(ev)}: ${error.message}`, "EVENT_LOAD_ERROR");
         }
-      }
-      global.client.events.set(config.name, eventModule);
-      logger.log(`${chalk.hex("#00FF00")(`LOADED`)} ${chalk.cyan(config.name)} success`, "EVENT_LOAD");
-    } catch (error) {
-      logger.err(`${chalk.hex("#FF0000")(`FAILED`)} to load ${chalk.yellow(ev)}: ${error.message}`, "EVENT_LOAD_ERROR");
     }
-  }
 
-  global.client.listenMqtt = global.client.api.listenMqtt(listen({ api: global.client.api }));
-  customScript({ api: global.client.api });
+    global.client.listenMqtt = global.client.api.listenMqtt(listen({ api: global.client.api }));
+    customScript({ api: global.client.api });
 
-  logger.log("Bot initialization complete! Waiting for events...", "BOT_READY");
+    logger.log("Bot initialization complete! Waiting for events...", "BOT_READY");
 
-  if (global.config.ADMINBOT && global.config.ADMINBOT.length > 0) {
-    const adminID = global.config.ADMINBOT[0];
-    try {
-      await utils.humanDelay();
-      await api.sendMessage(
-        `✅ Bot is now activated and running! Type '${global.config.PREFIX}help' to see commands.`,
-        adminID
-      );
-      logger.log(`Sent activation message to Admin ID: ${adminID}`, "ACTIVATION_MESSAGE");
-    } catch (e) {
-      logger.err(`Failed to send activation message to Admin ID ${adminID}: ${e.message}. The bot is running, but couldn't send the message.`, "ACTIVATION_FAIL");
+    if (global.config.ADMINBOT && global.config.ADMINBOT.length > 0) {
+        const adminID = global.config.ADMINBOT[0];
+        try {
+            await utils.humanDelay();
+            await api.sendMessage(
+                `✅ Bot is now activated and running! Type '${global.config.PREFIX}help' to see commands.`,
+                adminID
+            );
+            logger.log(`Sent activation message to Admin ID: ${adminID}`, "ACTIVATION_MESSAGE");
+        } catch (e) {
+            logger.err(`Failed to send activation message to Admin ID ${adminID}: ${e.message}. The bot is running, but couldn't send the message.`, "ACTIVATION_FAIL");
+        }
     }
-  }
 }
 
+// --- Web Server for Uptime Monitoring / Health Checks ---
 const PORT = process.env.PORT || 3000;
 
 const getCurrentTime = () => {
-  return moment.tz("Asia/Dhaka").format("YYYY-MM-DD HH:mm:ss");
+    return moment.tz("Asia/Dhaka").format("YYYY-MM-DD HH:mm:ss");
 };
 
 function startWebServer() {
-  const app = express();
+    const app = express();
 
-  app.get('/', (req, res) => {
-    res.status(200).send('Bot is awake and running!');
-  });
-
-  app.get('/health', (req, res) => {
-    res.json({
-      status: 'OK',
-      timestamp: getCurrentTime(),
-      bot_login_status: global.client.api ? 'Logged In' : 'Not Logged In / Initializing',
-      uptime_seconds: Math.floor((Date.now() - global.client.timeStart) / 1000),
+    app.get('/', (req, res) => {
+        res.status(200).send('Bot is awake and running!');
     });
-  });
 
-  app.listen(PORT, '0.0.0.0', () => {
-    logger.log(`Uptime Robot endpoint listening on port ${PORT}`, "SERVER");
-  }).on('error', (err) => {
-    logger.err(`Failed to start Express server on port ${PORT}: ${err.message}. This is critical for uptime monitoring.`, "SERVER_ERROR");
-  });
+    app.get('/health', (req, res) => {
+        res.json({
+            status: 'OK',
+            timestamp: getCurrentTime(),
+            bot_login_status: global.client.api ? 'Logged In' : 'Not Logged In / Initializing',
+            uptime_seconds: Math.floor((Date.now() - global.client.timeStart) / 1000),
+        });
+    });
+
+    app.listen(PORT, '0.0.0.0', () => {
+        logger.log(`Uptime Robot endpoint listening on port ${PORT}`, "SERVER");
+    }).on('error', (err) => {
+        logger.err(`Failed to start Express server on port ${PORT}: ${err.message}. This is critical for uptime monitoring.`, "SERVER_ERROR");
+    });
 }
 
+// --- Main Program Entry Point ---
 startWebServer();
 onBot();
 
+// --- Process Event Handlers for Stability ---
 process.on('uncaughtException', (err) => {
-  logger.err(`Uncaught Exception: ${err.stack || err.message}`, "CRITICAL");
+    logger.err(`Uncaught Exception: ${err.stack || err.message}`, "CRITICAL");
+    // Don't exit immediately - try to log the error and continue
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.err(`Unhandled Rejection at: ${promise}, reason: ${reason}`, "CRITICAL");
+    logger.err(`Unhandled Rejection at: ${promise}, reason: ${reason}`, "CRITICAL");
+    // Don't exit immediately - try to log the error and continue
 });
 
 process.on('SIGTERM', () => {
-  logger.log('Received SIGTERM - shutting down gracefully', "SHUTDOWN");
-  process.exit(0);
+    logger.log('Received SIGTERM - shutting down gracefully', "SHUTDOWN");
+    process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  logger.log('Received SIGINT - shutting down gracefully', "SHUTDOWN");
-  process.exit(0);
+    logger.log('Received SIGINT - shutting down gracefully', "SHUTDOWN");
+    process.exit(0);
 });
 
+// Auto-restart if process dies
 process.on('exit', (code) => {
-  if (code !== 0 && global.config?.autoRestart?.enabled) {
-    logger.err(`Process exiting with code ${code} - attempting to restart`, "RESTART");
-    setTimeout(() => {
-      require('child_process').spawn(process.argv.shift(), process.argv, {
-        cwd: process.cwd(),
-        detached: true,
-        stdio: 'inherit'
-      });
-    }, 1000);
-  }
+    if (code !== 0 && global.config?.autoRestart?.enabled) {
+        logger.err(`Process exiting with code ${code} - attempting to restart`, "RESTART");
+        setTimeout(() => {
+            require('child_process').spawn(process.argv.shift(), process.argv, {
+                cwd: process.cwd(),
+                detached: true,
+                stdio: 'inherit'
+            });
+        }, 1000);
+    }
 });
