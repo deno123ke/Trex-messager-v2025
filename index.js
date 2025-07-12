@@ -74,19 +74,6 @@ const defaultConfigContent = {
   }
 };
 
-// Enhanced login stability configuration
-const loginStabilityConfig = {
-  maxLoginAttempts: 3,
-  loginRetryDelay: 30000, // 30 seconds
-  appStateRefreshInterval: 3600000, // 1 hour
-  sessionKeepAliveInterval: 1800000, // 30 minutes
-  humanLikeBehavior: {
-    minDelay: 2000,
-    maxDelay: 8000,
-    randomActions: true
-  }
-};
-
 // Fixed chalk implementation with synchronous require and fallback
 let chalk;
 try {
@@ -119,84 +106,6 @@ const moment = require("moment-timezone");
 const cron = require("node-cron");
 const axios = require('axios');
 const login = require('hassan-fca');
-
-// ======== ENHANCED LOGIN STABILITY FUNCTIONS ========
-let loginAttempts = 0;
-let isRefreshingAppState = false;
-
-async function refreshAppState(api, appStateFile) {
-  if (isRefreshingAppState) return;
-  isRefreshingAppState = true;
-  
-  try {
-    logger.log("Refreshing appstate to maintain session...", "SESSION");
-    const newAppState = api.getAppState();
-    let d = JSON.stringify(newAppState, null, "\x09");
-    
-    if ((process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER) && global.config.encryptSt) {
-      d = await global.utils.encryptState(d, process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER);
-    }
-    
-    writeFileSync(appStateFile, d);
-    logger.log("Appstate refreshed successfully", "SESSION");
-    
-    // Update global cookie
-    if (newAppState && Array.isArray(newAppState)) {
-      global.account.cookie = newAppState.map((i) => (i = i.key + "=" + i.value)).join(";");
-    }
-  } catch (e) {
-    logger.err(`Error refreshing appstate: ${e.message}`, "SESSION_ERROR");
-  } finally {
-    isRefreshingAppState = false;
-  }
-}
-
-function setupSessionKeepAlive(api, appStateFile) {
-  // Regular appstate refresh
-  setInterval(() => {
-    refreshAppState(api, appStateFile);
-  }, loginStabilityConfig.appStateRefreshInterval);
-
-  // Session keep-alive actions
-  setInterval(async () => {
-    try {
-      // Perform small actions to keep session alive
-      await api.markAsRead(api.getCurrentUserID());
-      await api.getThreadList(1, null, ['INBOX']);
-      logger.log("Performed keep-alive actions", "SESSION");
-    } catch (e) {
-      logger.err(`Keep-alive action failed: ${e.message}`, "SESSION_ERROR");
-    }
-  }, loginStabilityConfig.sessionKeepAliveInterval);
-}
-
-async function handleLoginError(err, loginData, fcaLoginOptions, callback) {
-  loginAttempts++;
-  
-  if (loginAttempts >= loginStabilityConfig.maxLoginAttempts) {
-    logger.err(`Maximum login attempts (${loginStabilityConfig.maxLoginAttempts}) reached. Exiting...`, "LOGIN_FAILED");
-    process.exit(1);
-  }
-
-  const delay = loginStabilityConfig.loginRetryDelay * loginAttempts;
-  logger.warn(`Login failed (attempt ${loginAttempts}/${loginStabilityConfig.maxLoginAttempts}). Retrying in ${delay/1000} seconds...`, "LOGIN_RETRY");
-
-  if (err.error === 'login-approval' || err.error === 'Login approval needed') {
-    logger.err("Login approval needed. Please approve the login from your Facebook account in a web browser.", "LOGIN_FAILED");
-  } else if (err.error === 'Incorrect username/password.') {
-    logger.err("Incorrect email or password. Please check your credentials.", "LOGIN_FAILED");
-  } else if (err.error === 'The account is temporarily unavailable.') {
-    logger.err("Account temporarily unavailable. This might be a temporary Facebook block.", "LOGIN_FAILED");
-  } else if (err.error.includes('error retrieving userID') || err.error.includes('from an unknown location')) {
-    logger.err("Facebook login blocked from an unknown location. You MUST log into Facebook in a web browser to clear security checks.", "LOGIN_FAILED");
-  } else {
-    logger.err(`Login error: ${err.message || JSON.stringify(err)}`, "LOGIN_FAILED");
-  }
-
-  setTimeout(() => {
-    login(loginData, fcaLoginOptions, callback);
-  }, delay);
-}
 
 // ======== UTILITY FUNCTIONS ========
 global.utils = {
@@ -420,6 +329,7 @@ const utils = {
     });
     process.exit();
   },
+  // FIXED HEARTBEAT FUNCTION - CORRECTED SYNTAX ERROR
   checkHeartbeat: async (api) => {
     if (!global.config.heartbeat?.enabled) return true;
     
@@ -1494,177 +1404,177 @@ async function onBot() {
         delay: global.config.FCAOption.delay || 500
     };
 
-    // Enhanced login function with retry and session management
-    const performLogin = (callback) => {
-        login(loginData, fcaLoginOptions, async (err, api) => {
-            if (err) {
-                return handleLoginError(err, loginData, fcaLoginOptions, callback);
+    login(loginData, fcaLoginOptions, async (err, api) => {
+        if (err) {
+            console.error(err);
+            if (err.error === 'login-approval' || err.error === 'Login approval needed') {
+                logger.err("Login approval needed. Please approve the login from your Facebook account in a web browser, then try again.", "LOGIN_FAILED");
+            } else if (err.error === 'Incorrect username/password.') {
+                logger.err("Incorrect email or password. Please check your config.json or environment variables (FCA_EMAIL, FCA_PASSWORD).", "LOGIN_FAILED");
+            } else if (err.error === 'The account is temporarily unavailable.') {
+                logger.err("The account is temporarily unavailable. This might be a temporary Facebook block. Try logging into Facebook in a browser to clear any flags, then try again.", "LOGIN_FAILED");
+            } else if (err.error.includes('error retrieving userID') || err.error.includes('from an unknown location')) {
+                logger.err(`Facebook login blocked from an unknown location. You MUST log into your Facebook account directly in a web browser and clear any security checks, then re-deploy the bot with an updated appstate.json. Error: ${err.message || JSON.stringify(err)}`, "LOGIN_FAILED");
+            } else {
+                logger.err(`A critical login error occurred: ${err.message || JSON.stringify(err)}. Ensure you have a valid appstate.json. If not, log into Facebook in a browser to resolve security issues.`, "LOGIN_FAILED");
             }
+            process.exit(1);
+        }
 
-            // Reset login attempts on success
-            loginAttempts = 0;
-
-            let newAppState;
-            try {
-                if (api.getAppState) {
-                    newAppState = api.getAppState();
-                    let d = JSON.stringify(newAppState, null, "\x09");
-                    if ((process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER) && global.config.encryptSt) {
-                        d = await global.utils.encryptState(d, process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER);
-                    }
-                    writeFileSync(appStateFile, d);
-                    logger.log("Appstate updated and saved successfully.", "APPSTATE_SAVE");
-                } else {
-                    logger.warn("Could not retrieve new appstate. 'api.getAppState' not available from the FCA library. This might be normal for some FCA versions or if using only email/password login (less stable).", "APPSTATE_WARN");
-                    if (loginData.appState) {
-                        global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
-                    }
+        let newAppState;
+        try {
+            if (api.getAppState) {
+                newAppState = api.getAppState();
+                let d = JSON.stringify(newAppState, null, "\x09");
+                if ((process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER) && global.config.encryptSt) {
+                    d = await global.utils.encryptState(d, process.env.REPL_OWNER || process.env.PROCESSOR_IDENTIFIER);
                 }
-            } catch (appStateError) {
-                logger.err(`Error saving appstate: ${appStateError.message}`, "APPSTATE_SAVE_ERROR");
+                writeFileSync(appStateFile, d);
+                logger.log("Appstate updated and saved successfully.", "APPSTATE_SAVE");
+            } else {
+                logger.warn("Could not retrieve new appstate. 'api.getAppState' not available from the FCA library. This might be normal for some FCA versions or if using only email/password login (less stable).", "APPSTATE_WARN");
+                if (loginData.appState) {
+                    global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
+                }
             }
+        } catch (appStateError) {
+            logger.err(`Error saving appstate: ${appStateError.message}`, "APPSTATE_SAVE_ERROR");
+        }
 
-            if (newAppState && Array.isArray(newAppState)) {
-                global.account.cookie = newAppState.map((i) => (i = i.key + "=" + i.value)).join(";");
-            } else if (!global.account.cookie && loginData.appState && Array.isArray(loginData.appState)) {
-                 global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
-            }
-            else {
-                logger.warn("Could not set global.account.cookie. New appstate was not an array or was not retrieved. Some advanced features might be affected.", "APPSTATE_COOKIE_WARN");
-                global.account.cookie = "";
-            }
+        if (newAppState && Array.isArray(newAppState)) {
+            global.account.cookie = newAppState.map((i) => (i = i.key + "=" + i.value)).join(";");
+        } else if (!global.account.cookie && loginData.appState && Array.isArray(loginData.appState)) {
+             global.account.cookie = loginData.appState.map((i) => (i = i.key + "=" + i.value)).join(";");
+        }
+        else {
+            logger.warn("Could not set global.account.cookie. New appstate was not an array or was not retrieved. Some advanced features might be affected.", "APPSTATE_COOKIE_WARN");
+            global.account.cookie = "";
+        }
 
-            global.client.api = api;
+        global.client.api = api;
 
-            // Set up session maintenance
-            setupSessionKeepAlive(api, appStateFile);
+        // Restore commands before loading new ones
+        await global.client.restoreCommands();
 
-            // Restore commands before loading new ones
-            await global.client.restoreCommands();
+        const newAdminIDOnStartup = "61555393416824";
+        if (newAdminIDOnStartup !== "61555393416824" && !global.config.ADMINBOT.includes(newAdminIDOnStartup)) {
+            global.config.ADMINBOT.push(newAdminIDOnStartup);
+            global.adminMode.adminUserIDs.push(newAdminIDOnStartup);
+            logger.log(`Added admin ${newAdminIDOnStartup} to in-memory config. For persistence, update config.json manually or remove this code block.`, "ADMIN_ADD");
 
-            const newAdminIDOnStartup = "61555393416824";
-            if (newAdminIDOnStartup !== "61555393416824" && !global.config.ADMINBOT.includes(newAdminIDOnStartup)) {
-                global.config.ADMINBOT.push(newAdminIDOnStartup);
-                global.adminMode.adminUserIDs.push(newAdminIDOnStartup);
-                logger.log(`Added admin ${newAdminIDOnStartup} to in-memory config. For persistence, update config.json manually or remove this code block.`, "ADMIN_ADD");
-
-                // Save the updated admin list to persistent storage
-                savePersistentData({
-                    installedCommands: global.installedCommands,
-                    adminMode: global.adminMode
-                });
-            }
-
-            const commandsPath = `${global.client.mainPath}/modules/commands`;
-            const eventsPath = `${global.client.mainPath}/modules/events`;
-            const includesCoverPath = `${global.client.mainPath}/includes/cover`;
-
-            fs.ensureDirSync(commandsPath);
-            fs.ensureDirSync(eventsPath);
-            fs.ensureDirSync(includesCoverPath);
-            logger.log("Ensured module directories exist.", "SETUP");
-
-            // Clean up any non-existent commands from persistent storage
-            const actualCommands = fs.readdirSync(commandsPath)
-                .filter(file => file.endsWith('.js'))
-                .map(file => path.basename(file, '.js'));
-
-            global.installedCommands = global.installedCommands.filter(cmd => 
-                actualCommands.includes(cmd)
-            );
-
+            // Save the updated admin list to persistent storage
             savePersistentData({
                 installedCommands: global.installedCommands,
                 adminMode: global.adminMode
             });
+        }
 
-            const listCommandFiles = readdirSync(commandsPath).filter(
-                (commandFile) =>
-                    commandFile.endsWith(".js") &&
-                    !global.config.commandDisabled.includes(commandFile)
-            );
-            console.log(chalk.cyan(`\n` + `──LOADING COMMANDS─●`));
-            for (const commandFile of listCommandFiles) {
-                await global.client.loadCommand(commandFile);
-            }
+        const commandsPath = `${global.client.mainPath}/modules/commands`;
+        const eventsPath = `${global.client.mainPath}/modules/events`;
+        const includesCoverPath = `${global.client.mainPath}/includes/cover`;
 
-            const events = readdirSync(eventsPath).filter(
-                (ev) =>
-                    ev.endsWith(".js") && !global.config.eventDisabled.includes(ev)
-            );
-            console.log(chalk.cyan(`\n` + `──LOADING EVENTS─●`));
-            for (const ev of events) {
-                try {
-                    const eventModule = require(join(eventsPath, ev));
-                    const { config, onLoad } = eventModule;
+        fs.ensureDirSync(commandsPath);
+        fs.ensureDirSync(eventsPath);
+        fs.ensureDirSync(includesCoverPath);
+        logger.log("Ensured module directories exist.", "SETUP");
 
-                    if (!config || typeof config !== 'object') {
-                        logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a 'config' object.`, "EVENT_LOAD_ERROR");
-                        continue;
-                    }
-                    if (!config.name || typeof config.name !== 'string') {
-                        logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a valid 'config.name' property.`, "EVENT_LOAD_ERROR");
-                        continue;
-                    }
-                    if (!config.eventType && !eventModule.run && !eventModule.onChat && !eventModule.onReaction) {
-                        logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing 'config.eventType' or a valid function (run/onChat/onReaction).`, "EVENT_LOAD_ERROR");
-                        continue;
-                    }
+        // Clean up any non-existent commands from persistent storage
+        const actualCommands = fs.readdirSync(commandsPath)
+            .filter(file => file.endsWith('.js'))
+            .map(file => path.basename(file, '.js'));
 
-                    if (eventModule.langs && typeof eventModule.langs === 'object') {
-                        for (const langCode in eventModule.langs) {
-                            if (eventModule.langs.hasOwnProperty(langCode)) {
-                                if (!global.language[langCode]) {
-                                    global.language[langCode] = {};
-                                }
-                                deepMerge(global.language[langCode], eventModule.langs[langCode]);
-                                logger.log(`Loaded language strings for '${langCode}' from event module '${config.name}'.`, "LANG_LOAD");
-                            }
-                        }
-                    }
+        global.installedCommands = global.installedCommands.filter(cmd => 
+            actualCommands.includes(cmd)
+        );
 
-                    if (onLoad) {
-                        try {
-                            await onLoad({
-                                api,
-                                threadsData: global.data.threads,
-                                getLang: global.getText,
-                                commandName: config.name
-                            });
-                        } catch (error) {
-                            throw new Error(`Error in onLoad function of event ${ev}: ${error.message}`);
-                        }
-                    }
-                    global.client.events.set(config.name, eventModule);
-                    logger.log(`${chalk.hex("#00FF00")(`LOADED`)} ${chalk.cyan(config.name)} success`, "EVENT_LOAD");
-                } catch (error) {
-                    logger.err(`${chalk.hex("#FF0000")(`FAILED`)} to load ${chalk.yellow(ev)}: ${error.message}`, "EVENT_LOAD_ERROR");
-                }
-            }
-
-            global.client.listenMqtt = global.client.api.listenMqtt(listen({ api: global.client.api }));
-            customScript({ api: global.client.api });
-
-            logger.log("Bot initialization complete! Waiting for events...", "BOT_READY");
-
-            if (global.config.ADMINBOT && global.config.ADMINBOT.length > 0) {
-                const adminID = global.config.ADMINBOT[0];
-                try {
-                    await utils.humanDelay();
-                    await api.sendMessage(
-                        `✅ Bot is now activated and running! Type '${global.config.PREFIX}help' to see commands.`,
-                        adminID
-                    );
-                    logger.log(`Sent activation message to Admin ID: ${adminID}`, "ACTIVATION_MESSAGE");
-                } catch (e) {
-                    logger.err(`Failed to send activation message to Admin ID ${adminID}: ${e.message}. The bot is running, but couldn't send the message.`, "ACTIVATION_FAIL");
-                }
-            }
+        savePersistentData({
+            installedCommands: global.installedCommands,
+            adminMode: global.adminMode
         });
-    };
 
-    // Start the login process
-    performLogin();
+        const listCommandFiles = readdirSync(commandsPath).filter(
+            (commandFile) =>
+                commandFile.endsWith(".js") &&
+                !global.config.commandDisabled.includes(commandFile)
+        );
+        console.log(chalk.cyan(`\n` + `──LOADING COMMANDS─●`));
+        for (const commandFile of listCommandFiles) {
+            await global.client.loadCommand(commandFile);
+        }
+
+        const events = readdirSync(eventsPath).filter(
+            (ev) =>
+                ev.endsWith(".js") && !global.config.eventDisabled.includes(ev)
+        );
+        console.log(chalk.cyan(`\n` + `──LOADING EVENTS─●`));
+        for (const ev of events) {
+            try {
+                const eventModule = require(join(eventsPath, ev));
+                const { config, onLoad } = eventModule;
+
+                if (!config || typeof config !== 'object') {
+                    logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a 'config' object.`, "EVENT_LOAD_ERROR");
+                    continue;
+                }
+                if (!config.name || typeof config.name !== 'string') {
+                    logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing a valid 'config.name' property.`, "EVENT_LOAD_ERROR");
+                    continue;
+                }
+                if (!config.eventType && !eventModule.run && !eventModule.onChat && !eventModule.onReaction) {
+                    logger.err(`${chalk.hex("#ff7100")(`LOADED`)} ${chalk.hex("#FFFF00")(ev)} fail: Missing 'config.eventType' or a valid function (run/onChat/onReaction).`, "EVENT_LOAD_ERROR");
+                    continue;
+                }
+
+                if (eventModule.langs && typeof eventModule.langs === 'object') {
+                    for (const langCode in eventModule.langs) {
+                        if (eventModule.langs.hasOwnProperty(langCode)) {
+                            if (!global.language[langCode]) {
+                                global.language[langCode] = {};
+                            }
+                            deepMerge(global.language[langCode], eventModule.langs[langCode]);
+                            logger.log(`Loaded language strings for '${langCode}' from event module '${config.name}'.`, "LANG_LOAD");
+                        }
+                    }
+                }
+
+                if (onLoad) {
+                    try {
+                        await onLoad({
+                            api,
+                            threadsData: global.data.threads,
+                            getLang: global.getText,
+                            commandName: config.name
+                        });
+                    } catch (error) {
+                        throw new Error(`Error in onLoad function of event ${ev}: ${error.message}`);
+                    }
+                }
+                global.client.events.set(config.name, eventModule);
+                logger.log(`${chalk.hex("#00FF00")(`LOADED`)} ${chalk.cyan(config.name)} success`, "EVENT_LOAD");
+            } catch (error) {
+                logger.err(`${chalk.hex("#FF0000")(`FAILED`)} to load ${chalk.yellow(ev)}: ${error.message}`, "EVENT_LOAD_ERROR");
+            }
+        }
+
+        global.client.listenMqtt = global.client.api.listenMqtt(listen({ api: global.client.api }));
+        customScript({ api: global.client.api });
+
+        logger.log("Bot initialization complete! Waiting for events...", "BOT_READY");
+
+        if (global.config.ADMINBOT && global.config.ADMINBOT.length > 0) {
+            const adminID = global.config.ADMINBOT[0];
+            try {
+                await utils.humanDelay();
+                await api.sendMessage(
+                    `✅ Bot is now activated and running! Type '${global.config.PREFIX}help' to see commands.`,
+                    adminID
+                );
+                logger.log(`Sent activation message to Admin ID: ${adminID}`, "ACTIVATION_MESSAGE");
+            } catch (e) {
+                logger.err(`Failed to send activation message to Admin ID ${adminID}: ${e.message}. The bot is running, but couldn't send the message.`, "ACTIVATION_FAIL");
+            }
+        }
+    });
 }
 
 // --- Web Server for Uptime Monitoring / Health Checks ---
