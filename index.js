@@ -428,10 +428,32 @@ const listen = ({ api }) => {
                 return;
             }
 
-            // Add null/undefined check for event
-            if (!event) {
-                logger.err("Received undefined/null event object", "EVENT_ERROR");
+            // Enhanced event validation
+            if (!event || typeof event !== 'object') {
+                logger.err("Received invalid event object", "EVENT_VALIDATION");
                 return;
+            }
+
+            // Skip processing if event is missing required properties
+            if (!event.type && !event.logMessageType) {
+                logger.err("Event missing type information", "EVENT_VALIDATION");
+                return;
+            }
+
+            // Skip if threadID is invalid
+            if (event.threadID && typeof event.threadID !== 'string') {
+                logger.err("Invalid threadID in event", "EVENT_VALIDATION");
+                return;
+            }
+
+            // Special handling for video messages
+            if (event.attachments && event.attachments.length > 0) {
+                const videoAttachments = event.attachments.filter(att => att.type === "video");
+                if (videoAttachments.length > 0) {
+                    logger.log(`Received video message with ${videoAttachments.length} video(s)`, "VIDEO_MESSAGE");
+                    // Skip processing or add your video handling logic here
+                    return;
+                }
             }
 
             // Log event type if it exists
@@ -517,6 +539,12 @@ const listen = ({ api }) => {
             global.api.handleReply = global.api.handleReply || new Map();
 
             if (event.type === "message" || event.type === "message_reply") {
+                // Skip if message is empty and has no attachments
+                if (!event.body && (!event.attachments || event.attachments.length === 0)) {
+                    logger.log("Received empty message with no attachments", "EMPTY_MESSAGE");
+                    return;
+                }
+
                 const lowerCaseBody = event.body ? event.body.toLowerCase() : '';
                 const systemPrefix = global.config.PREFIX;
                 let threadPrefix = await global.data.threads.get(event.threadID, "data.prefix") || systemPrefix;
@@ -562,6 +590,11 @@ const listen = ({ api }) => {
 
                 // ======= HANDLE REPLY =======
                 if (event.type === "message_reply") {
+                    if (!event.messageReply || !event.messageReply.messageID) {
+                        logger.err("Invalid reply event - missing messageReply data", "REPLY_ERROR");
+                        return;
+                    }
+
                     const repliedToMessageID = event.messageReply.messageID;
                     const threadID = event.threadID;
                     const replierSenderID = event.senderID;
