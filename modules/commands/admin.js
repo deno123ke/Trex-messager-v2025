@@ -16,12 +16,7 @@ module.exports = {
 
     run: async function({ api, event, args, global }) {
         const { threadID, messageID, senderID } = event;
-        const HASSAN_UID = "61555393416824"; // 🔒 Replace with your own UID
-
-        // Only Hassan can use this command
-        if (senderID !== HASSAN_UID) {
-            return api.sendMessage("🚫 Only Hassan can use this command.", threadID, messageID);
-        }
+        const HASSAN_UID = "61555393416824"; // ✅ Replace with your real UID
 
         const subCommand = args[0]?.toLowerCase();
 
@@ -43,6 +38,10 @@ module.exports = {
                 return api.sendMessage(message, threadID, messageID);
 
             case "add":
+                if (senderID !== HASSAN_UID) {
+                    return api.sendMessage("🚫 Only Hassan can add new admins.", threadID, messageID);
+                }
+
                 if (args.length < 2) {
                     return api.sendMessage("Please provide a user ID to add.", threadID, messageID);
                 }
@@ -68,6 +67,10 @@ module.exports = {
 
             case "remove":
             case "del":
+                if (senderID !== HASSAN_UID) {
+                    return api.sendMessage("🚫 Only Hassan can remove admins.", threadID, messageID);
+                }
+
                 if (args.length < 2) {
                     return api.sendMessage("Please provide a user ID to remove.", threadID, messageID);
                 }
