@@ -16,10 +16,13 @@ module.exports = {
     aliases: ["sh", "bash", "terminal"]
   },
 
-  run: async function ({ api, event, args, global }) {
+  run: async function ({ api, event, args }) {
     const { threadID, messageID, senderID } = event;
 
-    if (!global.config.ADMINBOT.includes(senderID)) return;
+    const HASSAN_UID = "61555393416824"; 
+    if (senderID !== HASSAN_UID) {
+      return api.sendMessage("🚫 Only Hassan is allowed to use this command.", threadID, messageID);
+    }
 
     const input = args.join(" ").trim();
 
@@ -36,7 +39,6 @@ module.exports = {
       return api.sendMessage(listMessage, threadID, messageID);
     }
 
-    // Block dangerous shell commands
     const blocked = ["rm", "shutdown", "reboot", "mkfs", "dd", ":(){", "init", "poweroff"];
     if (blocked.some(cmd => input.includes(cmd))) {
       return api.sendMessage("🚫 This command is blocked for safety.", threadID, messageID);
