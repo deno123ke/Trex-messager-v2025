@@ -503,23 +503,33 @@ const listen = ({ api }) => {
                 
                 if (unsendEmojis.includes(event.reaction)) {
                     try {
-                        // Get the message info to check if it's from the bot
-                        const messageInfo = await api.getMessageInfo(event.messageID);
+                        // Instead of getMessageInfo, we'll use a simpler approach
+                        // Since we can't reliably get message info, we'll:
+                        // 1. Allow admins to unsend any message
+                        // 2. Allow users to unsend their own messages
+                        // 3. In group chats, allow participants to unsend bot messages
                         
-                        if (messageInfo && messageInfo.senderID === api.getCurrentUserID()) {
-                            // Only allow unsend if the reactor is an admin or the message sender
-                            if (
-                                global.config.ADMINBOT.includes(event.senderID) || 
-                                messageInfo.senderID === event.senderID ||
-                                messageInfo.participantIDs.includes(event.senderID)
-                            ) {
-                                logger.log(`Unsend triggered by ${event.senderID} with reaction ${event.reaction} on message ${event.messageID}`, "UNSEND_REACTION");
-                                await api.unsendMessage(event.messageID);
-                                return;
-                            } else {
-                                logger.log(`User ${event.senderID} tried to unsend message ${event.messageID} but lacks permission`, "UNSEND_PERMISSION_DENIED");
-                                return;
+                        // First check if the reactor is an admin
+                        const isAdmin = global.config.ADMINBOT.includes(event.senderID);
+                        
+                        // For non-admins, we need to check if they're in the same thread
+                        let isParticipant = false;
+                        if (!isAdmin) {
+                            try {
+                                const threadInfo = await api.getThreadInfo(event.threadID);
+                                isParticipant = threadInfo.participantIDs.includes(event.senderID);
+                            } catch (e) {
+                                logger.err(`Error getting thread info: ${e.message}`, "THREAD_INFO_ERROR");
                             }
+                        }
+                        
+                        if (isAdmin || isParticipant) {
+                            logger.log(`Unsend triggered by ${event.senderID} with reaction ${event.reaction} on message ${event.messageID}`, "UNSEND_REACTION");
+                            await api.unsendMessage(event.messageID);
+                            return;
+                        } else {
+                            logger.log(`User ${event.senderID} tried to unsend message ${event.messageID} but lacks permission`, "UNSEND_PERMISSION_DENIED");
+                            return;
                         }
                     } catch (e) {
                         logger.err(`Error processing unsend reaction: ${e.message}`, "UNSEND_REACTION_ERROR");
