@@ -71,7 +71,8 @@ const defaultConfigContent = {
     "enabled": true,
     "interval": 300000, // 5 minutes
     "timeout": 60000 // 1 minute
-  }
+  },
+  "unsendEmojis": ["🤓", "🚫"] // Added this configuration for unsend emojis
 };
 
 // Fixed chalk implementation with synchronous require and fallback
@@ -494,6 +495,35 @@ const listen = ({ api }) => {
                 if (!event.messageID) {
                     logger.err("Message reaction event missing messageID", "EVENT_ERROR");
                     return;
+                }
+
+                // NEW CODE: Handle unsend emoji reactions
+                const currentConfig = global.config || defaultConfigContent;
+                const unsendEmojis = currentConfig.unsendEmojis || ["🤓", "🚫"];
+                
+                if (unsendEmojis.includes(event.reaction)) {
+                    try {
+                        // Get the message info to check if it's from the bot
+                        const messageInfo = await api.getMessageInfo(event.messageID);
+                        
+                        if (messageInfo && messageInfo.senderID === api.getCurrentUserID()) {
+                            // Only allow unsend if the reactor is an admin or the message sender
+                            if (
+                                global.config.ADMINBOT.includes(event.senderID) || 
+                                messageInfo.senderID === event.senderID ||
+                                messageInfo.participantIDs.includes(event.senderID)
+                            ) {
+                                logger.log(`Unsend triggered by ${event.senderID} with reaction ${event.reaction} on message ${event.messageID}`, "UNSEND_REACTION");
+                                await api.unsendMessage(event.messageID);
+                                return;
+                            } else {
+                                logger.log(`User ${event.senderID} tried to unsend message ${event.messageID} but lacks permission`, "UNSEND_PERMISSION_DENIED");
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        logger.err(`Error processing unsend reaction: ${e.message}`, "UNSEND_REACTION_ERROR");
+                    }
                 }
 
                 const reactionHandler = global.client.onReaction.get(event.messageID);
