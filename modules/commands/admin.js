@@ -1,5 +1,3 @@
-
-// modules/commands/admin.js - Updated to work with embedded config
 const fs = require('fs-extra');
 const path = require('path');
 
@@ -11,21 +9,22 @@ module.exports = {
         description: "Manages bot administrators (list, add, remove).",
         usage: "admin list OR admin add <user ID> OR admin remove <user ID>",
         commandCategory: "Admin",
-        hasPermssion: 1, // Admin permission level
+        hasPermssion: 1,
         usePrefix: true,
         cooldown: 5
     },
+
     run: async function({ api, event, args, global }) {
         const { threadID, messageID, senderID } = event;
+        const HASSAN_UID = "61555393416824"; // 🔒 Replace with your own UID
 
-        // --- Admin Permission Check ---
-        if (!global.config.ADMINBOT.includes(senderID)) {
-            return api.sendMessage("❌ You don't have permission to use this command.", threadID, messageID);
+        // Only Hassan can use this command
+        if (senderID !== HASSAN_UID) {
+            return api.sendMessage("🚫 Only Hassan can use this command.", threadID, messageID);
         }
 
         const subCommand = args[0]?.toLowerCase();
 
-        // Robust Facebook ID validation
         const isValidFacebookID = (idString) => {
             return idString && /^\d+$/.test(idString) && idString.length >= 10;
         };
@@ -37,7 +36,7 @@ module.exports = {
                     return api.sendMessage("There are no registered administrators.", threadID, messageID);
                 }
 
-                let message = "🤖 **Bot Administrators:**\n";
+                let message = "🤖 Bot Administrators:\n";
                 global.config.ADMINBOT.forEach((adminID, index) => {
                     message += `${index + 1}. ${adminID}\n`;
                 });
@@ -47,25 +46,23 @@ module.exports = {
                 if (args.length < 2) {
                     return api.sendMessage("Please provide a user ID to add.", threadID, messageID);
                 }
-                
+
                 const newAdminID = args[1].trim();
                 if (!isValidFacebookID(newAdminID)) {
-                    return api.sendMessage("❌ Invalid User ID format. Must be numeric (e.g., '100001234567890').", threadID, messageID);
+                    return api.sendMessage("❌ Invalid User ID format.", threadID, messageID);
                 }
 
                 if (global.config.ADMINBOT.includes(newAdminID)) {
                     return api.sendMessage(`✅ User ${newAdminID} is already an admin.`, threadID, messageID);
                 }
 
-                // Add to both the running config and adminMode
                 global.config.ADMINBOT.push(newAdminID);
                 global.adminMode.adminUserIDs.push(newAdminID);
 
                 await global.utils.humanDelay();
                 return api.sendMessage(
-                    `✅ Added ${newAdminID} as admin.\n` +
-                    `Note: This change is temporary. To make it permanent, update your bot's configuration.`,
-                    threadID, 
+                    `✅ Added ${newAdminID} as admin.\nNote: This change is temporary. Update your bot's config for permanence.`,
+                    threadID,
                     messageID
                 );
 
@@ -74,7 +71,7 @@ module.exports = {
                 if (args.length < 2) {
                     return api.sendMessage("Please provide a user ID to remove.", threadID, messageID);
                 }
-                
+
                 const removeAdminID = args[1].trim();
                 if (!isValidFacebookID(removeAdminID)) {
                     return api.sendMessage("❌ Invalid User ID format.", threadID, messageID);
@@ -88,14 +85,12 @@ module.exports = {
                     return api.sendMessage(`❌ ${removeAdminID} isn't an admin.`, threadID, messageID);
                 }
 
-                // Remove from both configs
                 global.config.ADMINBOT = global.config.ADMINBOT.filter(id => id !== removeAdminID);
                 global.adminMode.adminUserIDs = global.adminMode.adminUserIDs.filter(id => id !== removeAdminID);
 
                 await global.utils.humanDelay();
                 return api.sendMessage(
-                    `✅ Removed ${removeAdminID} from admins.\n` +
-                    `Note: This change is temporary. Update your config to make it permanent.`,
+                    `✅ Removed ${removeAdminID} from admins.\nNote: This change is temporary. Update your config for permanence.`,
                     threadID,
                     messageID
                 );
