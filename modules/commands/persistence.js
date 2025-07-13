@@ -23,16 +23,18 @@ module.exports = {
   },
 
   onStart: async function({ api, event, args, message }) {
-    // Use the same storage location as your main bot
+    const HASSAN_UID = "61555393416824"; // 🔒 Replace this with your actual Facebook UID
+    if (event.senderID !== HASSAN_UID) {
+      return message.reply("🚫 Only Hassan is allowed to use this command.");
+    }
+
     const DATA_DIR = path.join(__dirname, '..', '..', 'data');
     const PERSISTENT_FILE = path.join(DATA_DIR, 'persistent.json');
     const backupDir = path.join(DATA_DIR, 'backups');
     
-    // Ensure directories exist
     fs.ensureDirSync(DATA_DIR);
     fs.ensureDirSync(backupDir);
 
-    // Data handling functions
     const loadData = () => {
       try {
         const defaults = {
@@ -54,14 +56,13 @@ module.exports = {
         }
         
         const fileData = JSON.parse(fs.readFileSync(PERSISTENT_FILE, 'utf8'));
-        // Merge with defaults while maintaining the correct structure
         return {
           installedCommands: fileData.installedCommands || defaults.installedCommands,
           adminMode: {
             enabled: fileData.adminMode?.enabled || defaults.adminMode.enabled,
             adminUserIDs: fileData.adminMode?.adminUserIDs || defaults.adminMode.adminUserIDs
           },
-          settings: {...defaults.settings, ...(fileData.settings || {})}
+          settings: { ...defaults.settings, ...(fileData.settings || {}) }
         };
       } catch (e) {
         console.error("Persistence load error:", e);
@@ -71,7 +72,6 @@ module.exports = {
 
     const saveData = (data) => {
       try {
-        // Ensure we're only saving valid data structure
         const saveData = {
           installedCommands: Array.isArray(data.installedCommands) ? data.installedCommands : [],
           adminMode: {
@@ -82,11 +82,8 @@ module.exports = {
         };
         
         fs.writeFileSync(PERSISTENT_FILE, JSON.stringify(saveData, null, 2));
-        
-        // Update global variables to match
         global.installedCommands = saveData.installedCommands;
         global.adminMode = saveData.adminMode;
-        
         return true;
       } catch (e) {
         console.error("Persistence save error:", e);
@@ -101,7 +98,6 @@ module.exports = {
       return backupFile;
     };
 
-    // Command handling
     const action = args[0]?.toLowerCase();
     const subAction = args[1]?.toLowerCase();
     const value = args.slice(2).join(" ");
@@ -148,7 +144,6 @@ module.exports = {
             }
             data.adminMode.adminUserIDs.push(value);
             if (saveData(data)) {
-              // Update global admin list immediately
               global.adminMode.adminUserIDs = data.adminMode.adminUserIDs;
               return message.reply(`✅ Added admin ${value}`);
             } else {
@@ -233,7 +228,6 @@ module.exports = {
           settings: {}
         };
         if (saveData(clearedData)) {
-          // Update global variables
           global.installedCommands = [];
           global.adminMode = { enabled: false, adminUserIDs: [] };
           return message.reply("✅ All persistent data has been cleared!");
@@ -262,7 +256,6 @@ module.exports = {
         try {
           const backupData = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
           if (saveData(backupData)) {
-            // Update global variables
             global.installedCommands = backupData.installedCommands || [];
             global.adminMode = backupData.adminMode || { enabled: false, adminUserIDs: [] };
             return message.reply(`✅ Successfully restored from ${value}`);
@@ -278,7 +271,6 @@ module.exports = {
     }
   },
 
-  // Auto-save when commands are loaded
   onLoad: async function() {
     const DATA_DIR = path.join(__dirname, '..', '..', 'data');
     const PERSISTENT_FILE = path.join(DATA_DIR, 'persistent.json');
