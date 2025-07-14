@@ -10,22 +10,20 @@
   "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.7.0",
-    "@tensorflow/tfjs-node": "^4.14.0",
-    "@vladmandic/face-api": "^1.9.4",
     "axios": "^0.21.1",
     "chalk": "^4.1.2",
-    "canvas": "^2.11.2",
     "express": "^4.18.2",
-    "form-data": "^4.0.0",
     "fs-extra": "^11.3.0",
     "get-latest-version": "^2.0.0",
     "groq-sdk": "^0.5.0",
     "hassan-fca": "github:TRexHassan565/HassAn-fca-mate",
     "moment-timezone": "^0.5.48",
     "node-cron": "^3.0.3",
-    "node-fetch": "^2.6.7",
     "semver": "^7.5.4",
     "sharp": "^0.33.4",
-    "tmp": "^0.2.1"
+    "tmp": "^0.2.1",
+    "node-fetch": "^2.6.7",
+    "form-data": "^4.0.0",
+    "canvas": "^2.11.2"
   }
 }
